@@ -1,0 +1,133 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { RefreshCw } from "lucide-react";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { CategoryFilter } from "@/components/feed/CategoryFilter";
+import { SearchBar } from "@/components/feed/SearchBar";
+import { FeedList } from "@/components/feed/FeedList";
+import { Pagination } from "@/components/feed/Pagination";
+import type { NewsItem, PaginatedResponse } from "@/types";
+
+const ITEMS_PER_PAGE = 20;
+
+export default function HomePage() {
+  const [items, setItems] = useState<NewsItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeCategory, setActiveCategory] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+
+  const fetchItems = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (activeCategory !== "all") params.append("category", activeCategory);
+      if (searchQuery) params.append("search", searchQuery);
+      params.append("page", String(page));
+      params.append("limit", String(ITEMS_PER_PAGE));
+
+      const res = await fetch(`/api/items?${params.toString()}`);
+      const data: PaginatedResponse = await res.json();
+      setItems(data.items || []);
+      setTotalPages(data.totalPages || 1);
+      setTotal(data.total || 0);
+    } catch (err) {
+      console.error("Failed to fetch items:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeCategory, searchQuery, page]);
+
+  useEffect(() => {
+    fetchItems();
+  }, [fetchItems]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetch("/api/refresh", { method: "POST" });
+      await fetchItems();
+    } catch (err) {
+      console.error("Failed to refresh:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleCategoryChange = (cat: string) => {
+    setActiveCategory(cat);
+    setPage(1);
+  };
+
+  const handleSearch = () => {
+    setSearchQuery(searchInput);
+    setPage(1);
+  };
+
+  return (
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+      <Sidebar />
+
+      <main className="ml-[180px] p-6">
+        <div className="mx-auto max-w-[800px]">
+          {/* Header */}
+          <div className="mb-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">精选</h1>
+                <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                  放射治疗领域的热点新闻与论文
+                </p>
+              </div>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm text-[var(--foreground)] hover:bg-white/20 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                />
+                刷新数据
+              </button>
+            </div>
+
+            <CategoryFilter
+              activeCategory={activeCategory}
+              onChange={handleCategoryChange}
+            />
+
+            <div className="mt-4">
+              <SearchBar
+                value={searchInput}
+                onChange={setSearchInput}
+                onSearch={handleSearch}
+              />
+            </div>
+          </div>
+
+          {/* Feed */}
+          <FeedList items={items} loading={loading} />
+
+          {/* Pagination */}
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
+
+          {/* Total count */}
+          {total > 0 && (
+            <p className="py-4 text-center text-xs text-[var(--muted-foreground)]">
+              共 {total} 条
+            </p>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
