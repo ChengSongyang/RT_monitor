@@ -1,53 +1,27 @@
 #!/usr/bin/env python3
 """
-放射治疗领域新闻监控 - RSS源版本
-使用RSS订阅源获取放射治疗相关资讯
+放射治疗领域新闻监控 - Tavily搜索版本
+使用Tavily Search API获取放射治疗相关资讯
 """
 import sys
 import json
 import urllib.request
-import urllib.parse
-import xml.etree.ElementTree as ET
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict
-import time
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-}
+TAVILY_API_KEY = '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'
+TAVILY_API_URL = 'https://api.tavily.com/search'
 
-
-def fetch_url(url: str, timeout: int = 30) -> bytes:
-    """Fetch URL with error handling"""
-    req = urllib.request.Request(url, headers=HEADERS)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read()
-    except Exception as e:
-        print(f"  [WARN] Failed to fetch {url}: {e}", file=sys.stderr)
-        return b""
-
-
-def parse_rss_date(date_str: str) -> datetime:
-    """解析RSS日期格式"""
-    formats = [
-        '%a, %d %b %Y %H:%M:%S %z',
-        '%a, %d %b %Y %H:%M:%S %Z',
-        '%Y-%m-%dT%H:%M:%S%z',
-        '%Y-%m-%dT%H:%M:%SZ',
-        '%Y-%m-%d %H:%M:%S',
-        '%Y-%m-%d',
-    ]
-    
-    for fmt in formats:
-        try:
-            return datetime.strptime(date_str.strip(), fmt)
-        except:
-            continue
-    
-    return datetime.now()
+# 搜索查询列表
+SEARCH_QUERIES = [
+    '放射治疗 最新进展 2026',
+    'radiotherapy AI artificial intelligence news',
+    '放疗 技术创新 新设备',
+    'radiation oncology clinical trial results',
+    '放射治疗 指南 共识 更新',
+    'radiotherapy deep learning treatment planning',
+]
 
 
 def clean_html(text: str) -> str:
@@ -63,241 +37,180 @@ def clean_html(text: str) -> str:
     return text.strip()
 
 
-def search_google_news_rss(days_back: int = 7) -> List[Dict]:
-    """
-    从Google News RSS获取放射治疗相关新闻
-    """
-    news_items = []
-    
-    queries = [
-        '放射治疗',
-        '放疗 科技',
-        '放射治疗 AI',
-        'radiation therapy news',
-        'radiotherapy technology',
-    ]
-    
-    seen_titles = set()
-    
-    for query in queries:
-        print(f"  📡 Google News: {query}...", file=sys.stderr)
-        
-        encoded_query = urllib.parse.quote(query)
-        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
-        
-        data = fetch_url(url)
-        if not data:
-            continue
-        
+def parse_date(date_str: str) -> str:
+    """解析日期为 YYYY-MM-DD 格式"""
+    if not date_str:
+        return datetime.now().strftime('%Y-%m-%d')
+    # 尝试常见格式
+    for fmt in [
+        '%a, %d %b %Y %H:%M:%S %Z',
+        '%a, %d %b %Y %H:%M:%S %z',
+        '%Y-%m-%dT%H:%M:%S%z',
+        '%Y-%m-%dT%H:%M:%SZ',
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%d',
+    ]:
         try:
-            root = ET.fromstring(data)
-            items = root.findall('.//item')
-            
-            for item in items:
-                title_elem = item.find('title')
-                if title_elem is None or not title_elem.text:
-                    continue
-                
-                title = clean_html(title_elem.text)
-                
-                title_lower = title.lower()
-                has_rt = any(kw in title_lower for kw in ['放射治疗', '放疗', 'radiation therapy', 'radiotherapy'])
-                
-                if not has_rt:
-                    continue
-                
-                link_elem = item.find('link')
-                url = link_elem.text if link_elem is not None else ''
-                
-                desc_elem = item.find('description')
-                content = ''
-                if desc_elem is not None and desc_elem.text:
-                    content = clean_html(desc_elem.text)
-                
-                pub_date_elem = item.find('pubDate')
-                pub_date = datetime.now()
-                if pub_date_elem is not None and pub_date_elem.text:
-                    pub_date = parse_rss_date(pub_date_elem.text)
-                
-                if pub_date < datetime.now() - timedelta(days=days_back):
-                    continue
-                
-                title_key = title[:50].lower()
-                if title_key in seen_titles:
-                    continue
-                seen_titles.add(title_key)
-                
-                source_elem = item.find('source')
-                source = source_elem.text if source_elem is not None else 'Google News'
-                
-                has_ai = any(kw in title_lower or kw in content.lower() 
-                           for kw in ['ai', '人工智能', '深度学习', '机器学习', 'artificial intelligence'])
-                
-                hot_score = 70 if has_ai else 50
-                
-                tags = ['放射治疗']
-                if has_ai:
-                    tags.append('AI')
-                
-                news_items.append({
-                    'id': f'google_news_{hash(title)}',
-                    'title': title,
-                    'content': content,
-                    'summary': content[:200] + ('...' if len(content) > 200 else ''),
-                    'source': source,
-                    'source_user': source,
-                    'source_verified': False,
-                    'source_verified_reason': '',
-                    'date': pub_date.strftime('%Y-%m-%d'),
-                    'timestamp': pub_date.timestamp(),
-                    'url': url,
-                    'image_urls': [],
-                    'hot_score': hot_score,
-                    'content_type': 'industry_news',
-                    'tags': tags,
-                    'category': 'industry_news',
-                })
-                
-        except Exception as e:
-            print(f"  [WARN] Parse error for Google News: {e}", file=sys.stderr)
-        
-        time.sleep(2)
-    
-    return news_items
-
-
-def search_pubmed_news(days_back: int = 7, max_results: int = 20) -> List[Dict]:
-    """
-    从PubMed获取放射治疗相关的新闻和评论文章
-    """
-    news_items = []
-    
-    queries = [
-        '"radiotherapy"[Title/Abstract] AND ("news"[Publication Type] OR "comment"[Publication Type])',
-        '"radiation therapy"[Title/Abstract] AND ("news"[Publication Type] OR "editorial"[Publication Type])',
-    ]
-    
-    seen_ids = set()
-    date_from = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
-    date_to = datetime.now().strftime('%Y/%m/%d')
-    
-    for query in queries:
-        print(f"  📡 PubMed新闻...", file=sys.stderr)
-        
-        search_url = (
-            f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?"
-            f"db=pubmed&term={urllib.parse.quote(query)}"
-            f"&mindate={date_from}&maxdate={date_to}&datetype=edat"
-            f"&retmax={max_results}&retmode=json&sort=relevance"
-        )
-        
-        data = fetch_url(search_url)
-        if not data:
+            return datetime.strptime(date_str.strip(), fmt).strftime('%Y-%m-%d')
+        except Exception:
             continue
-        
-        try:
-            result = json.loads(data)
-            ids = result.get('esearchresult', {}).get('idlist', [])
-            
-            if not ids:
-                continue
-            
-            ids_str = ','.join(ids)
-            fetch_url_str = (
-                f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?"
-                f"db=pubmed&id={ids_str}&retmode=json"
-            )
-            
-            summary_data = fetch_url(fetch_url_str)
-            if not summary_data:
-                continue
-            
-            summary_result = json.loads(summary_data)
-            result_list = summary_result.get('result', {})
-            
-            for uid in ids:
-                if uid in seen_ids or uid not in result_list:
-                    continue
-                seen_ids.add(uid)
-                
-                item = result_list[uid]
-                title = item.get('title', '')
-                pub_date = item.get('pubdate', '')
-                authors_list = item.get('authors', [])
-                authors = ', '.join(a.get('name', '') for a in authors_list[:5])
-                journal = item.get('fulljournalname', '') or item.get('source', '')
-                
-                has_ai = any(kw in title.lower() 
-                           for kw in ['ai', 'artificial intelligence', 'deep learning', 'machine learning', 'llm'])
-                
-                hot_score = 70 if has_ai else 50
-                
-                tags = ['放射治疗', '学术新闻']
-                if has_ai:
-                    tags.append('AI')
-                
-                news_items.append({
-                    'id': f'pubmed_news_{uid}',
-                    'title': title,
-                    'content': '',
-                    'summary': '',
-                    'source': 'PubMed',
-                    'source_user': authors,
-                    'source_verified': True,
-                    'source_verified_reason': '学术数据库',
-                    'date': pub_date,
-                    'timestamp': datetime.now().timestamp(),
-                    'url': f"https://pubmed.ncbi.nlm.nih.gov/{uid}/",
-                    'image_urls': [],
-                    'hot_score': hot_score,
-                    'content_type': 'research',
-                    'tags': tags,
-                    'category': 'industry_news',
-                })
-                
-        except Exception as e:
-            print(f"  [WARN] Parse error for PubMed: {e}", file=sys.stderr)
-        
-        time.sleep(2)
-    
-    return news_items
+    # 尝试提取前10个字符作为日期
+    if len(date_str) >= 10:
+        return date_str[:10]
+    return datetime.now().strftime('%Y-%m-%d')
 
 
-def deduplicate_news(news_items: List[Dict]) -> List[Dict]:
-    """去除重复新闻"""
-    seen_titles = set()
-    unique_items = []
-    
-    for item in news_items:
-        title_key = item['title'][:50].lower().strip()
-        if title_key not in seen_titles:
-            seen_titles.add(title_key)
-            unique_items.append(item)
-    
-    return unique_items
+def extract_source(url: str) -> str:
+    """从URL提取来源名称"""
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url).hostname or ''
+        # 去掉 www. 前缀
+        host = re.sub(r'^www\.', '', host)
+        # 常见域名映射
+        domain_map = {
+            'nature.com': 'Nature',
+            'pubmed.ncbi.nlm.nih.gov': 'PubMed',
+            'arxiv.org': 'arXiv',
+            'news.google.com': 'Google News',
+            'biospace.com': 'BioSpace',
+            'medscape.com': 'Medscape',
+            'medicalnewstoday.com': 'Medical News Today',
+            'cancer.gov': 'NCI',
+            'astro.org': 'ASTRO',
+            'estro.org': 'ESTRO',
+        }
+        for domain, name in domain_map.items():
+            if domain in host:
+                return name
+        # 返回域名主体
+        parts = host.split('.')
+        if len(parts) >= 2:
+            return parts[-2].capitalize()
+        return host
+    except Exception:
+        return 'Tavily'
+
+
+def tavily_search(query: str, max_results: int = 10) -> List[Dict]:
+    """调用Tavily Search API"""
+    payload = json.dumps({
+        'query': query,
+        'max_results': max_results,
+        'topic': 'news',
+        'search_depth': 'basic',
+        'include_answer': False,
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        TAVILY_API_URL,
+        data=payload,
+        headers={
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {TAVILY_API_KEY}',
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            return data.get('results', [])
+    except Exception as e:
+        print(f'  [WARN] Tavily search failed for "{query}": {e}', file=sys.stderr)
+        return []
+
+
+def fetch_all_news() -> List[Dict]:
+    """获取所有放射治疗相关新闻"""
+    all_items = []
+    seen_urls = set()
+
+    for query in SEARCH_QUERIES:
+        print(f'  📡 Tavily: {query}...', file=sys.stderr)
+        results = tavily_search(query, max_results=8)
+
+        for r in results:
+            url = r.get('url', '')
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+
+            title = clean_html(r.get('title', ''))
+            if not title:
+                continue
+
+            content = clean_html(r.get('content', ''))
+            published = r.get('published_date', '') or ''
+            date = parse_date(published)
+            source = extract_source(url)
+
+            # 判断相关性
+            text_lower = (title + ' ' + content).lower()
+            has_rt = any(kw in text_lower for kw in [
+                '放射治疗', '放疗', 'radiotherapy', 'radiation therapy',
+                'radiation oncology', '放射肿瘤',
+            ])
+            has_ai = any(kw in text_lower for kw in [
+                'ai', '人工智能', 'deep learning', 'machine learning',
+                'artificial intelligence', '大模型', 'llm', 'transformer',
+            ])
+
+            hot_score = 50
+            if has_rt:
+                hot_score += 10
+            if has_ai:
+                hot_score += 10
+
+            tags = []
+            if has_rt:
+                tags.append('放射治疗')
+            if has_ai:
+                tags.append('AI')
+
+            all_items.append({
+                'id': f'tavily_{hash(url)}',
+                'title': title,
+                'content': content,
+                'summary': content[:200] + ('...' if len(content) > 200 else ''),
+                'source': source,
+                'source_user': source,
+                'source_verified': False,
+                'source_verified_reason': '',
+                'date': date,
+                'timestamp': datetime.now().timestamp(),
+                'url': url,
+                'image_urls': [],
+                'hot_score': hot_score,
+                'content_type': 'industry_news',
+                'tags': tags,
+                'category': 'industry_news',
+            })
+
+    return all_items
+
+
+def deduplicate(items: List[Dict]) -> List[Dict]:
+    """去重"""
+    seen = set()
+    unique = []
+    for item in items:
+        key = item['title'][:50].lower().strip()
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
 
 
 def main():
-    days_back = 1
-    
-    print(f"🔍 搜索放射治疗领域新闻 (过去{days_back}天)...", file=sys.stderr)
-    print(f"📡 数据源: Google News, PubMed", file=sys.stderr)
-    
-    all_news = []
-    
-    print("  📡 Google News...", file=sys.stderr)
-    all_news.extend(search_google_news_rss(days_back=days_back))
-    
-    print("  📡 PubMed新闻...", file=sys.stderr)
-    all_news.extend(search_pubmed_news(days_back=days_back))
-    
-    unique_news = deduplicate_news(all_news)
+    print('🔍 Tavily搜索放射治疗领域新闻...', file=sys.stderr)
+
+    all_news = fetch_all_news()
+    unique_news = deduplicate(all_news)
     unique_news.sort(key=lambda x: x.get('hot_score', 0), reverse=True)
-    
-    print(f"  ✅ 共找到 {len(unique_news)} 条不重复新闻", file=sys.stderr)
-    
+
+    print(f'  ✅ 共找到 {len(unique_news)} 条不重复新闻', file=sys.stderr)
     print(json.dumps(unique_news, ensure_ascii=False, indent=2))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -1,32 +1,23 @@
-"""Google News 数据源采集器"""
+"""Tavily Search 数据源采集器（替代Google News RSS）"""
 import sys
 import re
-import urllib.parse
-import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+import json
+import urllib.request
+from datetime import datetime
 from typing import List, Dict
-import time
-from . import fetch_url, make_content_id, deduplicate
+from . import make_content_id, deduplicate
 
+TAVILY_API_KEY = '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'
+TAVILY_API_URL = 'https://api.tavily.com/search'
 
-def parse_rss_date(date_str: str) -> datetime:
-    """解析RSS日期格式"""
-    formats = [
-        '%a, %d %b %Y %H:%M:%S %z',
-        '%a, %d %b %Y %H:%M:%S %Z',
-        '%Y-%m-%dT%H:%M:%S%z',
-        '%Y-%m-%dT%H:%M:%SZ',
-        '%Y-%m-%d %H:%M:%S',
-        '%Y-%m-%d',
-    ]
-
-    for fmt in formats:
-        try:
-            return datetime.strptime(date_str.strip(), fmt)
-        except:
-            continue
-
-    return datetime.now()
+SEARCH_QUERIES = [
+    '放射治疗 最新进展 2026',
+    'radiotherapy AI artificial intelligence news',
+    '放疗 技术创新 新设备',
+    'radiation oncology clinical trial results',
+    '放射治疗 指南 共识 更新',
+    'radiotherapy deep learning treatment planning',
+]
 
 
 def clean_html(text: str) -> str:
@@ -42,99 +33,148 @@ def clean_html(text: str) -> str:
     return text.strip()
 
 
-def collect(days_back: int = 7) -> List[Dict]:
-    news_items = []
-
-    queries = [
-        '放射治疗',
-        '放疗 科技',
-        '放射治疗 AI',
-        'radiation therapy news',
-        'radiotherapy technology',
-    ]
-
-    seen_titles = set()
-
-    for query in queries:
-        encoded_query = urllib.parse.quote(query)
-        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
-
-        data = fetch_url(url)
-        if not data:
-            continue
-
+def parse_date(date_str: str) -> str:
+    """解析日期为 YYYY-MM-DD 格式"""
+    if not date_str:
+        return datetime.now().strftime('%Y-%m-%d')
+    for fmt in [
+        '%a, %d %b %Y %H:%M:%S %Z',
+        '%a, %d %b %Y %H:%M:%S %z',
+        '%Y-%m-%dT%H:%M:%S%z',
+        '%Y-%m-%dT%H:%M:%SZ',
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%d',
+    ]:
         try:
-            root = ET.fromstring(data)
-            items = root.findall('.//item')
+            return datetime.strptime(date_str.strip(), fmt).strftime('%Y-%m-%d')
+        except Exception:
+            continue
+    if len(date_str) >= 10:
+        return date_str[:10]
+    return datetime.now().strftime('%Y-%m-%d')
 
-            for item in items:
-                title_elem = item.find('title')
-                if title_elem is None or not title_elem.text:
-                    continue
 
-                title = clean_html(title_elem.text)
+def extract_source(url: str) -> str:
+    """从URL提取来源名称"""
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url).hostname or ''
+        host = re.sub(r'^www\.', '', host)
+        domain_map = {
+            'nature.com': 'Nature',
+            'pubmed.ncbi.nlm.nih.gov': 'PubMed',
+            'arxiv.org': 'arXiv',
+            'biospace.com': 'BioSpace',
+            'medscape.com': 'Medscape',
+            'medicalnewstoday.com': 'Medical News Today',
+            'cancer.gov': 'NCI',
+            'astro.org': 'ASTRO',
+            'estro.org': 'ESTRO',
+        }
+        for domain, name in domain_map.items():
+            if domain in host:
+                return name
+        parts = host.split('.')
+        if len(parts) >= 2:
+            return parts[-2].capitalize()
+        return host
+    except Exception:
+        return 'Tavily'
 
-                title_lower = title.lower()
-                has_rt = any(kw in title_lower for kw in ['放射治疗', '放疗', 'radiation therapy', 'radiotherapy'])
 
-                if not has_rt:
-                    continue
+def tavily_search(query: str, max_results: int = 10) -> List[Dict]:
+    """调用Tavily Search API"""
+    payload = json.dumps({
+        'query': query,
+        'max_results': max_results,
+        'topic': 'news',
+        'search_depth': 'basic',
+        'include_answer': False,
+    }).encode('utf-8')
 
-                link_elem = item.find('link')
-                item_url = link_elem.text if link_elem is not None else ''
+    req = urllib.request.Request(
+        TAVILY_API_URL,
+        data=payload,
+        headers={
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {TAVILY_API_KEY}',
+        },
+    )
 
-                desc_elem = item.find('description')
-                content = ''
-                if desc_elem is not None and desc_elem.text:
-                    content = clean_html(desc_elem.text)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            return data.get('results', [])
+    except Exception as e:
+        print(f'  [WARN] Tavily search failed for "{query}": {e}', file=sys.stderr)
+        return []
 
-                pub_date_elem = item.find('pubDate')
-                pub_date = datetime.now()
-                if pub_date_elem is not None and pub_date_elem.text:
-                    pub_date = parse_rss_date(pub_date_elem.text)
 
-                if pub_date < datetime.now() - timedelta(days=days_back):
-                    continue
+def collect(days_back: int = 7) -> List[Dict]:
+    """采集放射治疗相关新闻"""
+    news_items = []
+    seen_urls = set()
 
-                title_key = title[:50].lower()
-                if title_key in seen_titles:
-                    continue
-                seen_titles.add(title_key)
+    for query in SEARCH_QUERIES:
+        print(f'  📡 Tavily: {query}...', file=sys.stderr)
+        results = tavily_search(query, max_results=8)
 
-                source_elem = item.find('source')
-                source = source_elem.text if source_elem is not None else 'Google News'
+        for r in results:
+            url = r.get('url', '')
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
 
-                has_ai = any(kw in title_lower or kw in content.lower()
-                           for kw in ['ai', '人工智能', '深度学习', '机器学习', 'artificial intelligence'])
+            title = clean_html(r.get('title', ''))
+            if not title:
+                continue
 
-                tags = ['放射治疗']
-                if has_ai:
-                    tags.append('AI')
+            content = clean_html(r.get('content', ''))
+            published = r.get('published_date', '') or ''
+            date = parse_date(published)
+            source = extract_source(url)
 
-                news_items.append({
-                    'id': make_content_id('google_news', str(hash(title))),
-                    'title': title,
-                    'content': content,
-                    'summary': content[:200] + ('...' if len(content) > 200 else ''),
-                    'url': item_url,
-                    'source': source,
-                    'source_type': 'news',
-                    'source_user': source,
-                    'source_verified': False,
-                    'source_verified_reason': '',
-                    'date': pub_date.strftime('%Y-%m-%d'),
-                    'timestamp': pub_date.timestamp(),
-                    'category': 'industry_news',
-                    'tags': tags,
-                    'images': [],
-                    'meta': {},
-                    'ai': {'score': 70 if has_ai else 50, 'is_featured': False, 'recommendation_reason': ''},
-                    'extra': {},
-                })
+            text_lower = (title + ' ' + content).lower()
+            has_rt = any(kw in text_lower for kw in [
+                '放射治疗', '放疗', 'radiotherapy', 'radiation therapy',
+                'radiation oncology', '放射肿瘤',
+            ])
+            has_ai = any(kw in text_lower for kw in [
+                'ai', '人工智能', 'deep learning', 'machine learning',
+                'artificial intelligence', '大模型', 'llm', 'transformer',
+            ])
 
-        except Exception as e:
-            print(f"  [WARN] Parse error for Google News: {e}", file=sys.stderr)
+            hot_score = 50
+            if has_rt:
+                hot_score += 10
+            if has_ai:
+                hot_score += 10
 
-        time.sleep(2)
+            tags = []
+            if has_rt:
+                tags.append('放射治疗')
+            if has_ai:
+                tags.append('AI')
+
+            news_items.append({
+                'id': make_content_id('tavily', str(hash(url))),
+                'title': title,
+                'content': content,
+                'summary': content[:200] + ('...' if len(content) > 200 else ''),
+                'url': url,
+                'source': source,
+                'source_type': 'news',
+                'source_user': source,
+                'source_verified': False,
+                'source_verified_reason': '',
+                'date': date,
+                'timestamp': datetime.now().timestamp(),
+                'category': 'industry_news',
+                'tags': tags,
+                'images': [],
+                'meta': {},
+                'ai': {'score': hot_score, 'is_featured': False, 'recommendation_reason': ''},
+                'extra': {},
+            })
 
     return deduplicate(news_items)
