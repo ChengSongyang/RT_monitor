@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Star, Menu, X } from "lucide-react";
+import { Star, Menu, X, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeSwitcher } from "@/components/ui/ThemeSwitcher";
 
@@ -71,6 +71,15 @@ export function Sidebar({ className }: SidebarProps) {
             <Star className="h-4 w-4" />
             <span>精选</span>
           </Link>
+          <a
+            href="http://47.77.216.151:24830"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--sidebar-foreground)] opacity-70 transition-colors hover:bg-white/10 hover:opacity-100"
+          >
+            <ExternalLink className="h-4 w-4" />
+            <span>AI 热点</span>
+          </a>
         </nav>
 
         {/* Bottom: Theme Switcher */}
