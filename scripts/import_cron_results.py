@@ -26,6 +26,69 @@ sys.path.insert(0, os.path.dirname(__file__))
 from db import init_db, upsert_content, log_sync, save_report
 
 
+def _generate_recommendation(title: str, abstract: str, source: str, journal: str, tags: list) -> tuple:
+    """基于论文元数据生成上榜理由和评分（启发式）"""
+    text = f"{title} {abstract}".lower()
+    score = 70
+    reasons = []
+
+    # 顶级期刊加分
+    top_journals = ['nature medicine', 'lancet', 'nejm', 'the lancet', 'nature', 'science',
+                    'cell', 'radiotherapy and oncology', 'ijrobp', 'int j radiat oncol biol phys',
+                    'red journal', 'green journal', 'medical physics', 'physics in medicine']
+    if any(j in journal.lower() for j in top_journals):
+        score += 15
+        reasons.append(f'发表于顶级期刊{journal}')
+
+    # 重要会议加分
+    top_conferences = ['cvpr', 'iccv', 'eccv', 'neurips', 'icml', 'miccai', 'aaai', 'estro', 'astro']
+    if any(c in source.lower() or c in journal.lower() for c in top_conferences):
+        score += 10
+        reasons.append(f'来自重要学术会议')
+
+    # 热点关键词加分
+    hot_keywords = {
+        'deep learning': '深度学习', 'machine learning': '机器学习', 'artificial intelligence': '人工智能',
+        'large language model': '大语言模型', 'llm': '大语言模型', 'gpt': 'GPT模型',
+        'foundation model': '基础模型', 'transformer': 'Transformer架构',
+        'segmentation': '图像分割', 'auto-segmentation': '自动分割',
+        'treatment planning': '治疗计划', 'dose prediction': '剂量预测',
+        'flash': 'FLASH放疗', 'proton': '质子治疗', 'carbon ion': '碳离子',
+        'adaptive': '自适应放疗', 'online': '在线自适应',
+        'clinical trial': '临床试验', 'randomized': '随机对照',
+        'survival': '生存率', 'outcome': '治疗结局',
+        'toxicity': '毒性反应', 'cardiac': '心脏毒性',
+        'immunotherapy': '免疫治疗', 'combination': '联合治疗',
+        'sbrt': 'SBRT', 'sbrt': 'SBRT', 'stereotactic': '立体定向',
+        'vmat': 'VMAT', 'imrt': 'IMRT',
+        'nasopharyngeal': '鼻咽癌', 'lung cancer': '肺癌', 'breast cancer': '乳腺癌',
+        'prostate': '前列腺癌', 'head and neck': '头颈部',
+    }
+    matched_topics = []
+    for kw, label in hot_keywords.items():
+        if kw in text and label not in matched_topics:
+            matched_topics.append(label)
+    if matched_topics:
+        score += min(len(matched_topics) * 3, 15)
+        reasons.append(f'涉及热点方向：{"、".join(matched_topics[:3])}')
+
+    # 多中心/大规模研究加分
+    if any(kw in text for kw in ['multicenter', 'multi-center', 'large-scale', 'meta-analysis', 'systematic review']):
+        score += 8
+        reasons.append('多中心/大规模研究，证据等级高')
+
+    # 限制评分范围
+    score = min(score, 98)
+
+    # 生成上榜理由
+    if reasons:
+        reason = '；'.join(reasons) + '。'
+    else:
+        reason = f'来自{source}的{journal}相关研究。'
+
+    return score, reason
+
+
 def convert_paper_to_content(paper: dict) -> dict:
     """将 monitor_radiotherapy_ai.py 输出的论文格式转换为 content 表格式"""
     source = paper.get('source', 'Unknown')
@@ -85,13 +148,34 @@ def convert_paper_to_content(paper: dict) -> dict:
                 tags.append(cat)
 
     # 构造 meta
+    journal = paper.get('journal', source)
     meta = {
         'authors': authors,
-        'journal': paper.get('journal', source),
+        'journal': journal,
         'pdf_url': paper.get('pdf_url', ''),
         'html_url': paper.get('html_url', ''),
         'doi': paper.get('doi', ''),
     }
+
+    # 构造 Obsidian Vault 中的 MD 文件路径
+    # 格式: Papers/{source_dir}/{date} - {short_title}.md
+    source_dir_map = {
+        'arxiv': 'arXiv', 'arXiv': 'arXiv',
+        'pubmed': 'PubMed', 'PubMed': 'PubMed',
+        'semantic scholar': 'SemanticScholar', 'SemanticScholar': 'SemanticScholar',
+        'ijrobp': 'IJROBP', 'IJROBP': 'IJROBP',
+        'radiotherapy and oncology': 'RadiotherapyAndOncology',
+        'cvpr': 'CVPR', 'CVPR': 'CVPR',
+        'miccai': 'MICCAI', 'MICCAI': 'MICCAI',
+    }
+    source_dir = source_dir_map.get(source, source_dir_map.get(source.lower(), source.replace(' ', '_')))
+    short_title = title[:60].replace('/', '-').replace('\\', '-').replace(':', '：')
+    date_prefix = date_str[:10] if date_str else 'unknown'
+    report_path = f"Papers/{source_dir}/{date_prefix} - {short_title}"
+    meta['report_path'] = report_path
+
+    # 基于关键词生成上榜理由和评分
+    score, reason = _generate_recommendation(title, abstract, source, journal, tags)
 
     return {
         'id': content_id,
@@ -110,7 +194,7 @@ def convert_paper_to_content(paper: dict) -> dict:
         'tags': tags,
         'images': [],
         'meta': meta,
-        'ai': {'score': 70, 'is_featured': False, 'recommendation_reason': ''},
+        'ai': {'score': score, 'is_featured': score >= 80, 'recommendation_reason': reason},
         'extra': {},
     }
 
