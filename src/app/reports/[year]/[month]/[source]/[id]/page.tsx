@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface ReportPageProps {
   params: Promise<{ year: string; month: string; source: string; id: string }>;
@@ -36,7 +37,7 @@ export default async function ReportPage({ params }: ReportPageProps) {
         </Link>
         {content ? (
           <article className="prose prose-invert max-w-none">
-            <ReactMarkdown>{content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </article>
         ) : (
           <div className="text-center py-16 text-[var(--muted-foreground)]">
