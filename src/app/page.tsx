@@ -73,7 +73,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <Sidebar />
 
-      <main className="ml-[180px] p-6">
+      <main className="p-4 pt-14 md:ml-[180px] md:p-6 md:pt-6">
         <div className="mx-auto max-w-[800px]">
           {/* Header */}
           <div className="mb-6">
