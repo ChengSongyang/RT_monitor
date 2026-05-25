@@ -2,6 +2,7 @@
 论文采集器 - 必须同时涉及放射治疗 AND 人工智能
 """
 import sys
+import os
 import json
 import urllib.request
 import urllib.parse
@@ -421,6 +422,30 @@ def collect(days_back: int = 14) -> List[Dict]:
     all_papers.extend(search_semantic_scholar(days_back=days_back))
 
     unique_papers = deduplicate(all_papers)
-    print(f"  ✅ 共找到 {len(unique_papers)} 篇放疗+AI论文", file=sys.stderr)
+
+    # 为每篇论文生成专家推荐理由
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from generate_expert_recommendations import generate_expert_recommendation
+        for p in unique_papers:
+            journal = p.get('journal', p.get('source', ''))
+            result = generate_expert_recommendation(
+                p.get('title', ''), p.get('content', '') or p.get('abstract', ''),
+                p.get('source', ''), journal, 'paper'
+            )
+            p['ai'] = {
+                'score': result['score'],
+                'is_featured': result['is_featured'],
+                'recommendation_reason': result['recommendation_reason'],
+                'tech_areas': result.get('tech_areas', []),
+                'cancer_types': result.get('cancer_types', []),
+                'study_type': result.get('study_type', ''),
+            }
+        print(f"  ✅ 共找到 {len(unique_papers)} 篇放疗+AI论文（含专家评论）", file=sys.stderr)
+    except Exception as e:
+        print(f"  ⚠️ 评论生成失败: {e}", file=sys.stderr)
+        for p in unique_papers:
+            p['ai'] = {'score': 70, 'is_featured': False, 'recommendation_reason': ''}
+        print(f"  ✅ 共找到 {len(unique_papers)} 篇放疗+AI论文", file=sys.stderr)
 
     return unique_papers
