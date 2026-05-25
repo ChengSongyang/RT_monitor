@@ -6,7 +6,7 @@ import sys
 import re
 import json
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict
 from . import make_content_id, deduplicate
 
@@ -20,30 +20,30 @@ ALLOWED_VENDORS = [
         'name_zh': '医科达',
         'search_queries': [
             'Elekta radiotherapy news',
-            'Elekta radiation therapy',
-            '医科达 放疗 新闻',
+            'Elekta radiation therapy latest',
         ],
         'domain_keywords': ['elekta.com', 'elekta'],
+        'search_domains': ['elekta.com'],
     },
     {
         'name_en': 'Varian',
         'name_zh': '瓦里安',
         'search_queries': [
             'Varian radiotherapy news',
-            'Varian radiation therapy',
-            '瓦里安 放疗 新闻',
+            'Varian radiation therapy latest',
         ],
         'domain_keywords': ['varian.com', 'varian'],
+        'search_domains': ['varian.com', 'siemens-healthineers.com'],
     },
     {
         'name_en': 'RaySearch',
         'name_zh': 'RaySearch',
         'search_queries': [
-            'RaySearch Laboratories radiotherapy',
-            'RaySearch treatment planning',
-            'RaySearch RayStation',
+            'RaySearch Laboratories news',
+            'RaySearch RayStation treatment planning',
         ],
         'domain_keywords': ['raysearch.com', 'raysearch'],
+        'search_domains': ['raysearch.com'],
     },
     {
         'name_en': '中核安科瑞',
@@ -51,8 +51,10 @@ ALLOWED_VENDORS = [
         'search_queries': [
             '中核安科瑞 放疗',
             '中核安科瑞 放射治疗',
+            'ankehigh radiotherapy',
         ],
         'domain_keywords': ['ankehigh', '中核安科瑞'],
+        'search_domains': ['ankehigh.com'],
     },
     {
         'name_en': '新华医疗',
@@ -63,16 +65,17 @@ ALLOWED_VENDORS = [
             'Shinva radiotherapy',
         ],
         'domain_keywords': ['shinva', '新华医疗'],
+        'search_domains': ['shinva.com'],
     },
     {
         'name_en': 'Manteia',
         'name_zh': 'Manteia',
         'search_queries': [
-            'Manteia radiotherapy',
+            'Manteia radiotherapy AI',
             'Manteia treatment planning',
-            'Manteia AI radiotherapy',
         ],
         'domain_keywords': ['manteia', 'manteiatech'],
+        'search_domains': ['manteiatech.com'],
     },
 ]
 
@@ -123,14 +126,18 @@ def identify_vendor(url: str, title: str, content: str) -> str:
     return ''
 
 
-def tavily_search(query: str, max_results: int = 10) -> List[Dict]:
-    payload = json.dumps({
+def tavily_search(query: str, max_results: int = 10, include_domains: list = None) -> List[Dict]:
+    body = {
         'query': query,
         'max_results': max_results,
         'topic': 'news',
         'search_depth': 'advanced',
         'include_answer': False,
-    }).encode('utf-8')
+    }
+    if include_domains:
+        body['include_domains'] = include_domains
+
+    payload = json.dumps(body).encode('utf-8')
 
     req = urllib.request.Request(
         TAVILY_API_URL,
@@ -154,40 +161,68 @@ def collect(days_back: int = 30) -> List[Dict]:
     """采集指定厂商的放疗新闻"""
     news_items = []
     seen_urls = set()
+    cutoff = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
 
     for vendor in ALLOWED_VENDORS:
         print(f'  📡 搜索 {vendor["name_zh"]}({vendor["name_en"]})...', file=sys.stderr)
+        search_domains = vendor.get('search_domains', [])
 
         for query in vendor['search_queries']:
-            results = tavily_search(query, max_results=10)
+            # 第一轮：限定官网域名搜索（精准）
+            if search_domains:
+                results = tavily_search(query, max_results=10, include_domains=search_domains)
+                for r in results:
+                    url = r.get('url', '')
+                    if url in seen_urls:
+                        continue
+                    title = clean_html(r.get('title', ''))
+                    if not title:
+                        continue
+                    content = clean_html(r.get('content', ''))
+                    seen_urls.add(url)
+                    published = r.get('published_date', '') or ''
+                    date = parse_date(published)
+                    if not date or date < cutoff:
+                        continue
+                    news_items.append({
+                        'id': make_content_id('vendor_news', str(hash(url))),
+                        'title': title,
+                        'content': content,
+                        'summary': content[:200] + ('...' if len(content) > 200 else ''),
+                        'url': url,
+                        'source': vendor['name_en'],
+                        'source_type': 'news',
+                        'source_user': vendor['name_en'],
+                        'source_verified': True,
+                        'source_verified_reason': f'放疗厂商 {vendor["name_en"]}',
+                        'date': date,
+                        'timestamp': datetime.strptime(date, '%Y-%m-%d').timestamp() if date else 0.0,
+                        'category': 'industry_news',
+                        'tags': [vendor['name_en'], '放疗厂商'],
+                        'images': [],
+                        'meta': {'vendor': vendor['name_en']},
+                        'ai': {'score': 70, 'is_featured': False, 'recommendation_reason': ''},
+                        'extra': {},
+                    })
 
+            # 第二轮：开放搜索 + identify_vendor 过滤（广搜）
+            results = tavily_search(query, max_results=10)
             for r in results:
                 url = r.get('url', '')
                 if url in seen_urls:
                     continue
-
                 title = clean_html(r.get('title', ''))
                 if not title:
                     continue
-
                 content = clean_html(r.get('content', ''))
-
-                # 验证是否确实来自该厂商
                 identified_vendor = identify_vendor(url, title, content)
                 if not identified_vendor:
-                    print(f'  ⏭️ 跳过非目标厂商: {title[:50]}...', file=sys.stderr)
                     continue
-
                 seen_urls.add(url)
-
                 published = r.get('published_date', '') or ''
                 date = parse_date(published)
-
-                # 如果无法确认发布日期，不收录
-                if not date:
-                    print(f'  ⏭️ 跳过无日期: {title[:50]}...', file=sys.stderr)
+                if not date or date < cutoff:
                     continue
-
                 news_items.append({
                     'id': make_content_id('vendor_news', str(hash(url))),
                     'title': title,
