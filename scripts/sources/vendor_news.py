@@ -126,6 +126,75 @@ def identify_vendor(url: str, title: str, content: str) -> str:
     return ''
 
 
+def _generate_recommendation(vendor: str, title: str, content: str) -> dict:
+    """基于新闻元数据生成上榜理由和评分"""
+    text = f"{title} {content}".lower()
+    score = 70
+    reasons = []
+
+    # 放疗技术关键词
+    tech_keywords = {
+        'artificial intelligence': 'AI/人工智能', 'machine learning': '机器学习',
+        'deep learning': '深度学习', 'adaptive': '自适应放疗',
+        'mr-linac': 'MR-Linac', 'mr guided': 'MR引导放疗',
+        'treatment planning': '治疗计划', 'dose prediction': '剂量预测',
+        'auto-segmentation': '自动分割', 'auto-contouring': '自动勾画',
+        'vmat': 'VMAT', 'imrt': 'IMRT', 'sbrt': 'SBRT',
+        'proton': '质子治疗', 'flash': 'FLASH放疗',
+        'quality assurance': '质量保证', 'commissioning': '设备验收',
+        'image-guided': '图像引导', 'igrt': 'IGRT',
+        'brachytherapy': '近距离放疗', 'robotic': '机器人放疗',
+    }
+    matched_tech = []
+    for kw, label in tech_keywords.items():
+        if kw in text and label not in matched_tech:
+            matched_tech.append(label)
+    if matched_tech:
+        score += min(len(matched_tech) * 3, 15)
+        reasons.append(f'涉及{"/".join(matched_tech[:3])}等放疗技术')
+
+    # 肿瘤类型
+    cancer_keywords = {
+        'lung cancer': '肺癌', 'breast cancer': '乳腺癌',
+        'prostate': '前列腺癌', 'head and neck': '头颈部肿瘤',
+        'nasopharyngeal': '鼻咽癌', 'cervical': '宫颈癌',
+        'liver': '肝癌', 'brain': '脑肿瘤', 'pancreatic': '胰腺癌',
+        'endometrial': '子宫内膜癌', 'esophageal': '食管癌',
+    }
+    matched_cancer = []
+    for kw, label in cancer_keywords.items():
+        if kw in text and label not in matched_cancer:
+            matched_cancer.append(label)
+    if matched_cancer:
+        reasons.append(f'针对{"、".join(matched_cancer[:2])}等癌种')
+
+    # 学术会议加分
+    conferences = ['estro', 'astro', 'rsna', 'aacr', 'asco', 'aacr', 'iccr', 'aapm']
+    for conf in conferences:
+        if conf in text:
+            score += 10
+            reasons.append(f'来自{conf.upper()}学术会议')
+            break
+
+    # 临床试验/研究
+    if any(kw in text for kw in ['clinical trial', 'fda clearance', 'ce mark', '510(k)', 'regulatory']):
+        score += 8
+        reasons.append('涉及监管审批/临床试验')
+    if any(kw in text for kw in ['study', 'research', 'publication', 'peer-reviewed']):
+        score += 5
+        reasons.append('有学术研究支撑')
+
+    score = min(score, 98)
+
+    if reasons:
+        reason = f'{vendor}（现属西门子医疗）' if vendor == 'Varian' else vendor
+        reason += '：' + '；'.join(reasons) + '。'
+    else:
+        reason = f'{vendor}的放疗行业动态。'
+
+    return {'score': score, 'is_featured': score >= 80, 'recommendation_reason': reason}
+
+
 def tavily_search(query: str, max_results: int = 10, include_domains: list = None) -> List[Dict]:
     body = {
         'query': query,
@@ -201,7 +270,7 @@ def collect(days_back: int = 30) -> List[Dict]:
                         'tags': [vendor['name_en'], '放疗厂商'],
                         'images': [],
                         'meta': {'vendor': vendor['name_en']},
-                        'ai': {'score': 70, 'is_featured': False, 'recommendation_reason': ''},
+                        'ai': _generate_recommendation(vendor['name_en'], title, content),
                         'extra': {},
                     })
 
@@ -240,7 +309,7 @@ def collect(days_back: int = 30) -> List[Dict]:
                     'tags': [identified_vendor, '放疗厂商'],
                     'images': [],
                     'meta': {'vendor': identified_vendor},
-                    'ai': {'score': 70, 'is_featured': False, 'recommendation_reason': ''},
+                    'ai': _generate_recommendation(identified_vendor, title, content),
                     'extra': {},
                 })
 
