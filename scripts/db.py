@@ -201,6 +201,7 @@ def query_content(
         item['recommendation_score'] = item['ai'].get('score', 0)
         item['is_featured'] = item['ai'].get('is_featured', False)
         item['recommendation_reason'] = item['ai'].get('recommendation_reason', '')
+        item['summary_cn'] = item['ai'].get('summary_cn', '')
         item['quoted_text'] = item['extra'].get('quoted_text', '')
         item['quoted_author'] = item['extra'].get('quoted_author', '')
         item['journal'] = item['meta'].get('journal', '')

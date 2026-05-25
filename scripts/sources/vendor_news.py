@@ -200,7 +200,7 @@ def collect(days_back: int = 30) -> List[Dict]:
                     'source_verified': True,
                     'source_verified_reason': f'放疗厂商 {identified_vendor}',
                     'date': date,
-                    'timestamp': datetime.now().timestamp(),
+                    'timestamp': datetime.strptime(date, '%Y-%m-%d').timestamp() if date else 0.0,
                     'category': 'industry_news',
                     'tags': [identified_vendor, '放疗厂商'],
                     'images': [],

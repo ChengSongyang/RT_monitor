@@ -89,6 +89,23 @@ def is_rt_ai_paper(title: str, abstract: str) -> bool:
     return has_rt_keyword(combined) and has_ai_keyword(combined)
 
 
+def _parse_timestamp(date_str: str) -> float:
+    """将日期字符串解析为 timestamp"""
+    if not date_str:
+        return 0.0
+    for fmt in ('%Y-%m-%d', '%Y-%m', '%Y', '%Y %b %d', '%Y %B %d',
+                '%b %d, %Y', '%B %d, %Y', '%Y/%m/%d'):
+        try:
+            return datetime.strptime(date_str[:len(fmt)+5], fmt).timestamp()
+        except (ValueError, IndexError):
+            continue
+    # fallback: try extracting year
+    try:
+        return datetime.strptime(date_str[:4] + '-01-01', '%Y-%m-%d').timestamp()
+    except:
+        return 0.0
+
+
 def search_arxiv(days_back: int = 14, max_results: int = 50) -> List[Dict]:
     """搜索arXiv：放疗+AI论文"""
     papers = []
@@ -144,10 +161,12 @@ def search_arxiv(days_back: int = 14, max_results: int = 50) -> List[Dict]:
                 papers.append({
                     'source': 'arXiv',
                     'source_type': 'paper',
+                    'category': 'paper',
                     'id': base_id,
                     'title': title,
                     'authors': authors,
                     'date': published,
+                    'timestamp': _parse_timestamp(published),
                     'content': summary,
                     'url': f"https://arxiv.org/abs/{base_id}",
                     'pdf_url': f"https://arxiv.org/pdf/{base_id}",
@@ -251,11 +270,13 @@ def search_pubmed(days_back: int = 14, max_results: int = 50) -> List[Dict]:
 
                     papers.append({
                         'source': 'PubMed',
-                    'source_type': 'paper',
+                        'source_type': 'paper',
+                        'category': 'paper',
                         'id': pmid,
                         'title': title,
                         'authors': authors,
                         'date': date_str,
+                        'timestamp': _parse_timestamp(date_str),
                         'content': abstract,
                         'url': f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
                         'pdf_url': '',
@@ -363,10 +384,12 @@ def search_semantic_scholar(days_back: int = 14) -> List[Dict]:
                 papers.append({
                     'source': source_label,
                     'source_type': 'paper',
+                    'category': 'paper',
                     'id': paper_id[:20],
                     'title': title,
                     'authors': authors,
                     'date': pub_date[:10] if pub_date else str(item.get('year', '')),
+                    'timestamp': _parse_timestamp(pub_date[:10] if pub_date else str(item.get('year', ''))),
                     'content': abstract,
                     'url': source_url,
                     'pdf_url': pdf_url,

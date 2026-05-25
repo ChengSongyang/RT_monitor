@@ -23,6 +23,7 @@ export interface NewsItem {
   quoted_text?: string;
   quoted_author?: string;
   recommendation_reason?: string;
+  summary_cn?: string;
   meta?: NewsItemMeta;
 }
 
@@ -57,6 +58,7 @@ export interface AIEnrichment {
   score: number;
   is_featured: boolean;
   recommendation_reason: string;
+  summary_cn?: string;
 }
 
 export interface NewsItemMeta {

@@ -71,6 +71,18 @@ export function NewsCard({ item }: NewsCardProps) {
         </p>
       )}
 
+      {/* Chinese Deep Summary (from cron agent) */}
+      {item.summary_cn && (
+        <details className="mb-3 group/summary">
+          <summary className="cursor-pointer text-xs font-medium text-[var(--accent)] hover:text-[var(--accent)]/80 select-none">
+            📖 查看中文深度总结
+          </summary>
+          <div className="mt-2 rounded-md bg-[var(--accent)]/5 border border-[var(--accent)]/10 p-3 text-sm leading-relaxed text-[var(--foreground)] whitespace-pre-wrap">
+            {item.summary_cn}
+          </div>
+        </details>
+      )}
+
       {/* Quoted text */}
       {item.quoted_text && (
         <blockquote className="mb-3 border-l-2 border-[var(--accent)]/40 pl-3 text-sm text-[var(--muted-foreground)] italic">

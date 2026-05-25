@@ -10,7 +10,14 @@ interface FeedListProps {
 function groupByDate(items: NewsItem[]): Record<string, NewsItem[]> {
   const groups: Record<string, NewsItem[]> = {};
   items.forEach((item) => {
-    const key = item.date.substring(0, 10);
+    // 用 timestamp 生成 YYYY-MM-DD key，避免 date 格式不一致问题
+    let key: string;
+    if (item.timestamp && item.timestamp > 0) {
+      const d = new Date(item.timestamp * 1000);
+      key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    } else {
+      key = item.date.substring(0, 10);
+    }
     if (!groups[key]) groups[key] = [];
     groups[key].push(item);
   });
