@@ -6,7 +6,11 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category");
   const source = searchParams.get("source");
+  const sourceType = searchParams.get("source_type");
+  const sourceId = searchParams.get("source_id");
+  const sourceKind = searchParams.get("source_kind");
   const search = searchParams.get("search");
+  const isFeatured = searchParams.get("is_featured");
   const limit = searchParams.get("limit") || "20";
   const page = searchParams.get("page") || "1";
 
@@ -14,7 +18,11 @@ export async function GET(request: NextRequest) {
     const params = new URLSearchParams();
     if (category) params.append("category", category);
     if (source) params.append("source", source);
+    if (sourceType) params.append("source_type", sourceType);
+    if (sourceId) params.append("source_id", sourceId);
+    if (sourceKind) params.append("source_kind", sourceKind);
     if (search) params.append("search", search);
+    if (isFeatured) params.append("is_featured", isFeatured);
     params.append("limit", limit);
     params.append("page", page);
 

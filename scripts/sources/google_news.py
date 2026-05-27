@@ -2,12 +2,14 @@
 import sys
 import re
 import json
+import os
 import urllib.request
 from datetime import datetime
 from typing import List, Dict
 from . import make_content_id, deduplicate
+from source_catalog import SOURCE_KIND_LABELS, find_source_by_host, get_host, host_label
 
-TAVILY_API_KEY = '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'
+TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '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')
 TAVILY_API_URL = 'https://api.tavily.com/search'
 
 # 以中文查询为主，确保返回中文结果
@@ -17,6 +19,10 @@ SEARCH_QUERIES = [
     '放射肿瘤学 临床试验 最新',
     '头颈部放疗 鼻咽癌 肺癌 乳腺癌',
     '放射治疗 新设备 新技术',
+    'ASTRO radiation oncology radiotherapy news',
+    'ESTRO radiotherapy guideline clinical news',
+    'AAPM radiotherapy medical physics AI',
+    'FDA radiotherapy device clearance AI',
     'radiation oncology AI deep learning latest',
     'radiotherapy clinical trial results 2026',
 ]
@@ -78,33 +84,33 @@ def parse_date(date_str: str) -> str:
 
 def extract_source(url: str) -> str:
     try:
-        from urllib.parse import urlparse
-        host = urlparse(url).hostname or ''
-        host = re.sub(r'^www\.', '', host)
-        domain_map = {
-            'nature.com': 'Nature',
-            'pubmed.ncbi.nlm.nih.gov': 'PubMed',
-            'arxiv.org': 'arXiv',
-            'biospace.com': 'BioSpace',
-            'medscape.com': 'Medscape',
-            'medicalnewstoday.com': 'Medical News Today',
-            'cancer.gov': 'NCI',
-            'astro.org': 'ASTRO',
-            'estro.org': 'ESTRO',
-            'thelancet.com': 'Lancet',
-            'nejm.org': 'NEJM',
-            'jco.org': 'JCO',
-            'rpor.pl': 'Reports of Practical Oncology',
-        }
-        for domain, name in domain_map.items():
-            if domain in host:
-                return name
-        parts = host.split('.')
-        if len(parts) >= 2:
-            return parts[-2].capitalize()
-        return host
+        host = get_host(url)
+        record = find_source_by_host(host)
+        if record:
+            return record['name']
+        return host_label(host)
     except Exception:
         return 'Tavily'
+
+
+def source_meta(url: str) -> Dict:
+    host = get_host(url)
+    record = find_source_by_host(host)
+    if not record:
+        return {
+            'source_id': '',
+            'source_kind': 'discovered',
+            'source_kind_label': SOURCE_KIND_LABELS['discovered'],
+            'origin_host': host,
+            'collection_method': 'Tavily 行业搜索',
+        }
+    return {
+        'source_id': record['id'],
+        'source_kind': record['kind'],
+        'source_kind_label': SOURCE_KIND_LABELS.get(record['kind'], record['kind']),
+        'origin_host': host,
+        'collection_method': 'Tavily 行业搜索',
+    }
 
 
 def is_relevant(title: str, content: str) -> bool:
@@ -181,6 +187,7 @@ def collect(days_back: int = 7) -> List[Dict]:
             published = r.get('published_date', '') or ''
             date = parse_date(published)
             source = extract_source(url)
+            meta = source_meta(url)
 
             # 严格过滤：必须与放疗相关
             if not is_relevant(title, content):
@@ -208,6 +215,13 @@ def collect(days_back: int = 7) -> List[Dict]:
             else:
                 category = 'industry_news'
 
+            verified = meta.get('source_kind') in ('academic', 'journal', 'professional_society', 'regulatory')
+            verified_reason = meta.get('source_kind_label', '') if verified else ''
+            try:
+                timestamp = datetime.strptime(date, '%Y-%m-%d').timestamp()
+            except Exception:
+                timestamp = datetime.now().timestamp()
+
             news_items.append({
                 'id': make_content_id('tavily', str(hash(url))),
                 'title': title,
@@ -217,14 +231,14 @@ def collect(days_back: int = 7) -> List[Dict]:
                 'source': source,
                 'source_type': 'news',
                 'source_user': source,
-                'source_verified': False,
-                'source_verified_reason': '',
+                'source_verified': verified,
+                'source_verified_reason': verified_reason,
                 'date': date,
-                'timestamp': datetime.now().timestamp(),
+                'timestamp': timestamp,
                 'category': category,
                 'tags': tags,
                 'images': [],
-                'meta': {},
+                'meta': meta,
                 'ai': {'score': hot_score, 'is_featured': False, 'recommendation_reason': ''},
                 'extra': {},
             })

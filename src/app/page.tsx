@@ -7,6 +7,7 @@ import { CategoryFilter } from "@/components/feed/CategoryFilter";
 import { SearchBar } from "@/components/feed/SearchBar";
 import { FeedList } from "@/components/feed/FeedList";
 import { Pagination } from "@/components/feed/Pagination";
+import { SourceOverview } from "@/components/feed/SourceOverview";
 import type { NewsItem, PaginatedResponse } from "@/types";
 
 const ITEMS_PER_PAGE = 20;
@@ -21,6 +22,7 @@ export default function HomePage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [sourceRefreshKey, setSourceRefreshKey] = useState(0);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -52,6 +54,7 @@ export default function HomePage() {
     try {
       await fetch("/api/refresh", { method: "POST" });
       await fetchItems();
+      setSourceRefreshKey((value) => value + 1);
     } catch (err) {
       console.error("Failed to refresh:", err);
     } finally {
@@ -109,6 +112,8 @@ export default function HomePage() {
               />
             </div>
           </section>
+
+          <SourceOverview refreshKey={sourceRefreshKey} />
 
           <FeedList items={items} loading={loading} />
 

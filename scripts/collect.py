@@ -7,12 +7,13 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from db import init_db, upsert_content, log_sync
-from sources import papers, vendor_news
+from sources import google_news, papers, vendor_news
 
 
 SOURCES = [
-    ('papers', papers),           # 放疗+AI论文
-    ('vendor_news', vendor_news), # 指定厂商新闻
+    ('papers', papers),                 # 放疗+AI论文
+    ('vendor_news', vendor_news),       # 指定厂商官网/相关新闻
+    ('radiotherapy_news', google_news), # 行业新闻与学会/监管动态
 ]
 
 

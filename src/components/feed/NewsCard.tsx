@@ -40,6 +40,11 @@ interface NewsCardProps {
 
 export function NewsCard({ item }: NewsCardProps) {
   const score = Math.round(item.recommendation_score || item.hot_score || 0);
+  const displaySource = item.source_display_name || item.source;
+  const sourceTitle = [
+    item.source_collection_method,
+    item.source_origin_host,
+  ].filter(Boolean).join(" · ") || displaySource;
 
   return (
     <div
@@ -53,16 +58,26 @@ export function NewsCard({ item }: NewsCardProps) {
       <article className="timeline-card group">
         <div className="timeline-card-head">
           <div className="timeline-head-left">
-            <span className="source-avatar">{getSourceInitial(item.source)}</span>
-            <span className="timeline-source" title={item.source}>
-              {item.source}
+            <span className="source-avatar">{getSourceInitial(displaySource)}</span>
+            <span className="timeline-source" title={sourceTitle}>
+              {displaySource}
             </span>
-            {item.source_user && item.source_user !== item.source && (
+            {item.source_kind_label && (
+              <span className="timeline-badge timeline-badge-soft">
+                {item.source_kind_label}
+              </span>
+            )}
+            {item.source_user && item.source_user !== displaySource && (
               <span className="uc-handle" title={item.source_user}>
                 {item.source_user}
               </span>
             )}
-            {item.source_verified && (
+            {item.mentioned_vendor && item.mentioned_vendor !== displaySource && (
+              <span className="uc-handle" title={item.mentioned_vendor}>
+                提及 {item.mentioned_vendor}
+              </span>
+            )}
+            {item.source_verified && item.source_verified_reason !== item.source_kind_label && (
               <span className="timeline-badge">
                 {item.source_verified_reason || "已认证"}
               </span>
@@ -89,6 +104,10 @@ export function NewsCard({ item }: NewsCardProps) {
           {item.title}
           <ExternalLink className="ml-1 inline h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
         </a>
+
+        {item.source_note && (
+          <p className="timeline-source-note">{item.source_note}</p>
+        )}
 
         {item.summary && <p className="timeline-summary">{item.summary}</p>}
 

@@ -9,6 +9,17 @@ import os
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 
+from source_catalog import (
+    SOURCE_CATALOG,
+    SOURCE_KIND_LABELS,
+    find_source_by_name,
+    get_source,
+    infer_source,
+    iter_sources_by_kind,
+    source_catalog_summary,
+    source_filter_terms,
+)
+
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'rt_monitor.db')
 
 SCHEMA_SQL = """
@@ -88,6 +99,104 @@ def init_db():
     conn.close()
 
 
+def _json_load(value: Any, fallback: Any) -> Any:
+    if value is None or value == '':
+        return fallback
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except Exception:
+        return fallback
+
+
+def _decode_content_row(row: sqlite3.Row) -> Dict:
+    item = dict(row)
+    item['tags'] = _json_load(item.get('tags'), [])
+    item['images'] = _json_load(item.get('images'), [])
+    item['image_urls'] = item['images']
+    item['meta'] = _json_load(item.get('meta'), {})
+    item['ai'] = _json_load(item.get('ai'), {})
+    item['extra'] = _json_load(item.get('extra'), {})
+    item['source_verified'] = bool(item.get('source_verified'))
+    item['recommendation_score'] = item['ai'].get('score', 0)
+    item['hot_score'] = item['ai'].get('score', 0)
+    item['is_featured'] = item['ai'].get('is_featured', False)
+    item['recommendation_reason'] = item['ai'].get('recommendation_reason', '')
+    item['summary_cn'] = item['ai'].get('summary_cn', '')
+    item['quoted_text'] = item['extra'].get('quoted_text', '')
+    item['quoted_author'] = item['extra'].get('quoted_author', '')
+    item['journal'] = item['meta'].get('journal', '')
+    item['pdf_url'] = item['meta'].get('pdf_url', '')
+    item['html_url'] = item['meta'].get('html_url', '')
+    item['report_path'] = item['meta'].get('report_path', '')
+    item['content_type'] = item.get('category', 'industry_news')
+
+    source_info = infer_source(item)
+    item['source_info'] = source_info
+    item['source_id'] = source_info.get('id', '')
+    item['source_kind'] = source_info.get('kind', '')
+    item['source_kind_label'] = source_info.get('kind_label', '')
+    item['source_display_name'] = source_info.get('name', item.get('source', ''))
+    item['source_short_name'] = source_info.get('short_name', item.get('source', ''))
+    item['source_homepage'] = source_info.get('homepage', '')
+    item['source_trust_level'] = source_info.get('trust_level', '')
+    item['source_collection_method'] = source_info.get('collection_method', '')
+    item['source_origin_host'] = source_info.get('origin_host', '')
+    item['source_origin_url'] = source_info.get('origin_url', item.get('url', ''))
+    item['source_note'] = source_info.get('note', '')
+    item['mentioned_source'] = source_info.get('mentioned_source')
+    item['mentioned_vendor'] = item['meta'].get('mentioned_vendor') or item['meta'].get('vendor', '')
+    if not item['source_verified'] and source_info.get('trust_level') in ('high', 'official'):
+        item['source_verified'] = True
+        item['source_verified_reason'] = item['source_kind_label']
+    return item
+
+
+def _source_record_condition(source: Dict[str, Any]) -> tuple:
+    terms = source_filter_terms(source)
+    parts = ["json_extract(meta, '$.source_id') = ?"]
+    params: List[Any] = [source['id']]
+
+    if terms['names']:
+        placeholders = ','.join(['?'] * len(terms['names']))
+        parts.append(f"source IN ({placeholders})")
+        params.extend(terms['names'])
+
+    for domain in terms['domains']:
+        parts.append('url LIKE ?')
+        params.append(f'%{domain}%')
+
+    return '(' + ' OR '.join(parts) + ')', params
+
+
+def _append_source_filters(
+    conditions: List[str],
+    params: List[Any],
+    source_id: Optional[str],
+    source_kind: Optional[str],
+):
+    if source_id:
+        source_record = get_source(source_id) or find_source_by_name(source_id)
+        if source_record:
+            condition, values = _source_record_condition(source_record)
+            conditions.append(condition)
+            params.extend(values)
+        else:
+            conditions.append("(source = ? OR json_extract(meta, '$.source_id') = ?)")
+            params.extend([source_id, source_id])
+
+    if source_kind:
+        kind_parts = ["json_extract(meta, '$.source_kind') = ?"]
+        kind_params: List[Any] = [source_kind]
+        for source_record in iter_sources_by_kind(source_kind):
+            condition, values = _source_record_condition(source_record)
+            kind_parts.append(condition)
+            kind_params.extend(values)
+        conditions.append('(' + ' OR '.join(kind_parts) + ')')
+        params.extend(kind_params)
+
+
 def upsert_content(items: List[Dict]) -> Dict:
     conn = get_db()
     stats = {'found': len(items), 'new': 0, 'updated': 0}
@@ -151,6 +260,8 @@ def query_content(
     category: Optional[str] = None,
     source: Optional[str] = None,
     source_type: Optional[str] = None,
+    source_id: Optional[str] = None,
+    source_kind: Optional[str] = None,
     search: Optional[str] = None,
     is_featured: Optional[bool] = None,
     page: int = 1,
@@ -169,6 +280,7 @@ def query_content(
     if source_type:
         conditions.append('source_type = ?')
         params.append(source_type)
+    _append_source_filters(conditions, params, source_id, source_kind)
     if search:
         conditions.append('(title LIKE ? OR summary LIKE ? OR content LIKE ?)')
         like = f'%{search}%'
@@ -191,24 +303,7 @@ def query_content(
 
     items = []
     for row in rows:
-        item = dict(row)
-        item['tags'] = json.loads(item['tags']) if item['tags'] else []
-        item['images'] = json.loads(item['images']) if item['images'] else []
-        item['meta'] = json.loads(item['meta']) if item['meta'] else {}
-        item['ai'] = json.loads(item['ai']) if item['ai'] else {}
-        item['extra'] = json.loads(item['extra']) if item['extra'] else {}
-        item['source_verified'] = bool(item['source_verified'])
-        item['recommendation_score'] = item['ai'].get('score', 0)
-        item['is_featured'] = item['ai'].get('is_featured', False)
-        item['recommendation_reason'] = item['ai'].get('recommendation_reason', '')
-        item['summary_cn'] = item['ai'].get('summary_cn', '')
-        item['quoted_text'] = item['extra'].get('quoted_text', '')
-        item['quoted_author'] = item['extra'].get('quoted_author', '')
-        item['journal'] = item['meta'].get('journal', '')
-        item['pdf_url'] = item['meta'].get('pdf_url', '')
-        item['html_url'] = item['meta'].get('html_url', '')
-        item['report_path'] = item['meta'].get('report_path', '')
-        items.append(item)
+        items.append(_decode_content_row(row))
 
     conn.close()
     return {
@@ -218,6 +313,160 @@ def query_content(
         'totalPages': total_pages,
         'limit': limit,
     }
+
+
+def _empty_source_card(source: Dict[str, Any]) -> Dict[str, Any]:
+    card = dict(source)
+    card['kind_label'] = SOURCE_KIND_LABELS.get(card.get('kind', ''), card.get('kind', '来源'))
+    card['count'] = 0
+    card['featured_count'] = 0
+    card['latest_date'] = ''
+    card['latest_timestamp'] = 0
+    card['categories'] = {}
+    card['source_types'] = {}
+    card['origin_hosts'] = {}
+    card['last_item'] = None
+    return card
+
+
+def _update_source_card(card: Dict[str, Any], item: Dict[str, Any]):
+    card['count'] += 1
+    if item.get('is_featured'):
+        card['featured_count'] += 1
+
+    category = item.get('category', 'unknown')
+    card['categories'][category] = card['categories'].get(category, 0) + 1
+
+    source_type = item.get('source_type', 'unknown')
+    card['source_types'][source_type] = card['source_types'].get(source_type, 0) + 1
+
+    origin_host = item.get('source_origin_host', '')
+    if origin_host:
+        card['origin_hosts'][origin_host] = card['origin_hosts'].get(origin_host, 0) + 1
+
+    timestamp = item.get('timestamp') or 0
+    if timestamp >= (card.get('latest_timestamp') or 0):
+        card['latest_timestamp'] = timestamp
+        card['latest_date'] = item.get('date', '')
+        card['last_item'] = {
+            'id': item.get('id'),
+            'title': item.get('title', ''),
+            'url': item.get('url', ''),
+            'date': item.get('date', ''),
+            'category': item.get('category', ''),
+            'source_note': item.get('source_note', ''),
+        }
+
+
+def _recent_syncs(conn: sqlite3.Connection, limit: int = 12) -> List[Dict[str, Any]]:
+    rows = conn.execute(
+        'SELECT source, items_found, items_new, items_updated, status, error_message, created_at '
+        'FROM sync_log ORDER BY created_at DESC LIMIT ?',
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def query_sources(source_kind: Optional[str] = None, include_empty: bool = True) -> Dict:
+    conn = get_db()
+
+    cards: Dict[str, Dict[str, Any]] = {}
+    if include_empty:
+        for source in SOURCE_CATALOG:
+            if source_kind and source.get('kind') != source_kind:
+                continue
+            cards[source['id']] = _empty_source_card(source)
+
+    rows = conn.execute('SELECT * FROM content ORDER BY timestamp DESC').fetchall()
+    total_items = 0
+
+    for row in rows:
+        item = _decode_content_row(row)
+        if source_kind and item.get('source_kind') != source_kind:
+            continue
+
+        total_items += 1
+        source_id = item.get('source_id') or 'unknown'
+        if source_id not in cards:
+            cards[source_id] = _empty_source_card(item['source_info'])
+        _update_source_card(cards[source_id], item)
+
+    sources = list(cards.values())
+    sources.sort(
+        key=lambda source: (
+            1 if source.get('count', 0) > 0 else 0,
+            source.get('count', 0),
+            source.get('latest_timestamp', 0),
+            source.get('name', ''),
+        ),
+        reverse=True,
+    )
+
+    kind_summary: Dict[str, Dict[str, Any]] = {}
+    for source in sources:
+        kind = source.get('kind', 'unknown')
+        if kind not in kind_summary:
+            kind_summary[kind] = {
+                'label': SOURCE_KIND_LABELS.get(kind, kind),
+                'sources': 0,
+                'active_sources': 0,
+                'items': 0,
+            }
+        kind_summary[kind]['sources'] += 1
+        if source.get('count', 0) > 0:
+            kind_summary[kind]['active_sources'] += 1
+            kind_summary[kind]['items'] += source.get('count', 0)
+
+    result = {
+        'sources': sources,
+        'total_sources': len(sources),
+        'active_sources': sum(1 for source in sources if source.get('count', 0) > 0),
+        'total_items': total_items,
+        'source_kinds': kind_summary,
+        'catalog': source_catalog_summary(),
+        'recent_syncs': _recent_syncs(conn),
+    }
+
+    conn.close()
+    return result
+
+
+def query_stats() -> Dict:
+    data = query_content(limit=10000)
+    items = data['items']
+    source_data = query_sources(include_empty=True)
+
+    stats = {
+        'total_items': data['total'],
+        'sources': {},
+        'source_types': {},
+        'source_kinds': {},
+        'categories': {},
+        'dates': {},
+        'source_cards': source_data['sources'],
+        'active_sources': source_data['active_sources'],
+        'configured_sources': source_data['catalog']['total_configured'],
+        'recent_syncs': source_data['recent_syncs'],
+    }
+
+    for item in items:
+        source = item.get('source_display_name') or item.get('source', 'unknown')
+        stats['sources'][source] = stats['sources'].get(source, 0) + 1
+
+        st = item.get('source_type', 'unknown')
+        stats['source_types'][st] = stats['source_types'].get(st, 0) + 1
+
+        sk = item.get('source_kind', 'unknown')
+        stats['source_kinds'][sk] = stats['source_kinds'].get(sk, 0) + 1
+
+        cat = item.get('category', 'unknown')
+        stats['categories'][cat] = stats['categories'].get(cat, 0) + 1
+
+        date = (item.get('date', '') or '')[:10]
+        if date:
+            stats['dates'][date] = stats['dates'].get(date, 0) + 1
+
+    return stats
 
 
 def get_report(content_id: str) -> Optional[Dict]:

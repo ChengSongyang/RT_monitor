@@ -5,12 +5,14 @@
 import sys
 import re
 import json
+import os
 import urllib.request
 from datetime import datetime, timedelta
 from typing import List, Dict
 from . import make_content_id, deduplicate
+from source_catalog import SOURCE_KIND_LABELS, find_source_by_host, find_source_by_name, get_host, host_label
 
-TAVILY_API_KEY = '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'
+TAVILY_API_KEY = os.environ.get('TAVILY_API_KEY', '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')
 TAVILY_API_URL = 'https://api.tavily.com/search'
 
 # 允许的厂商列表（英文名、中文名、搜索关键词）
@@ -43,7 +45,27 @@ ALLOWED_VENDORS = [
             'RaySearch RayStation treatment planning',
         ],
         'domain_keywords': ['raysearch.com', 'raysearch'],
-        'search_domains': ['raysearch.com'],
+        'search_domains': ['raysearchlabs.com', 'raysearch.com'],
+    },
+    {
+        'name_en': 'Accuray',
+        'name_zh': '安科锐',
+        'search_queries': [
+            'Accuray radiotherapy news',
+            'CyberKnife TomoTherapy latest',
+        ],
+        'domain_keywords': ['accuray.com', 'accuray', 'cyberknife', 'tomotherapy'],
+        'search_domains': ['accuray.com'],
+    },
+    {
+        'name_en': 'Siemens Healthineers',
+        'name_zh': '西门子医疗',
+        'search_queries': [
+            'Siemens Healthineers radiotherapy Varian news',
+            'Siemens Healthineers oncology radiotherapy AI',
+        ],
+        'domain_keywords': ['siemens-healthineers.com', 'siemens healthineers', '西门子医疗'],
+        'search_domains': ['siemens-healthineers.com'],
     },
     {
         'name_en': '中核安科瑞',
@@ -124,6 +146,54 @@ def identify_vendor(url: str, title: str, content: str) -> str:
             if kw in combined:
                 return vendor['name_en']
     return ''
+
+
+def is_official_vendor_url(vendor: Dict, url: str) -> bool:
+    host = get_host(url)
+    return any(domain.lower() in host for domain in vendor.get('search_domains', []))
+
+
+def source_from_url(url: str) -> Dict:
+    host = get_host(url)
+    record = find_source_by_host(host)
+    if record:
+        return record
+    return {
+        'id': '',
+        'name': host_label(host),
+        'short_name': host_label(host),
+        'kind': 'discovered',
+        'source_type': 'news',
+        'homepage': f'https://{host}' if host else '',
+        'domain_patterns': [host] if host else [],
+        'collection_method': 'Tavily 厂商关键词广搜',
+        'trust_level': 'unknown',
+    }
+
+
+def vendor_meta(vendor_name: str, url: str, collection_method: str) -> Dict:
+    record = find_source_by_name(vendor_name)
+    host = get_host(url)
+    return {
+        'vendor': vendor_name,
+        'source_id': record['id'] if record else '',
+        'source_kind': 'vendor_official',
+        'source_kind_label': SOURCE_KIND_LABELS['vendor_official'],
+        'origin_host': host,
+        'collection_method': collection_method,
+    }
+
+
+def publication_meta(record: Dict, url: str, vendor_name: str) -> Dict:
+    kind = record.get('kind', 'discovered')
+    return {
+        'mentioned_vendor': vendor_name,
+        'source_id': record.get('id', ''),
+        'source_kind': kind,
+        'source_kind_label': SOURCE_KIND_LABELS.get(kind, kind),
+        'origin_host': get_host(url),
+        'collection_method': 'Tavily 厂商关键词广搜',
+    }
 
 
 def _generate_recommendation(vendor: str, title: str, content: str) -> dict:
@@ -269,7 +339,11 @@ def collect(days_back: int = 30) -> List[Dict]:
                         'category': 'industry_news',
                         'tags': [vendor['name_en'], '放疗厂商'],
                         'images': [],
-                        'meta': {'vendor': vendor['name_en']},
+                        'meta': vendor_meta(
+                            vendor['name_en'],
+                            url,
+                            'Tavily 官网域名限定搜索',
+                        ),
                         'ai': _generate_recommendation(vendor['name_en'], title, content),
                         'extra': {},
                     })
@@ -292,23 +366,56 @@ def collect(days_back: int = 30) -> List[Dict]:
                 date = parse_date(published)
                 if not date or date < cutoff:
                     continue
+                vendor_record = next(
+                    (entry for entry in ALLOWED_VENDORS if entry['name_en'] == identified_vendor),
+                    None,
+                )
+                official_url = is_official_vendor_url(vendor_record, url) if vendor_record else False
+                if official_url:
+                    source_name = identified_vendor
+                    source_user = identified_vendor
+                    source_verified = True
+                    source_verified_reason = f'放疗厂商 {identified_vendor}'
+                    tags = [identified_vendor, '放疗厂商']
+                    meta = vendor_meta(
+                        identified_vendor,
+                        url,
+                        'Tavily 官网域名限定搜索',
+                    )
+                else:
+                    publication = source_from_url(url)
+                    source_name = publication['name']
+                    source_user = publication['name']
+                    source_verified = publication.get('kind') in (
+                        'journal',
+                        'professional_society',
+                        'regulatory',
+                        'industry_news',
+                    )
+                    source_verified_reason = (
+                        SOURCE_KIND_LABELS.get(publication.get('kind', ''), '')
+                        if source_verified
+                        else f'提及厂商 {identified_vendor}'
+                    )
+                    tags = [identified_vendor, '厂商相关', '第三方报道']
+                    meta = publication_meta(publication, url, identified_vendor)
                 news_items.append({
                     'id': make_content_id('vendor_news', str(hash(url))),
                     'title': title,
                     'content': content,
                     'summary': content[:200] + ('...' if len(content) > 200 else ''),
                     'url': url,
-                    'source': identified_vendor,
+                    'source': source_name,
                     'source_type': 'news',
-                    'source_user': identified_vendor,
-                    'source_verified': True,
-                    'source_verified_reason': f'放疗厂商 {identified_vendor}',
+                    'source_user': source_user,
+                    'source_verified': source_verified,
+                    'source_verified_reason': source_verified_reason,
                     'date': date,
                     'timestamp': datetime.strptime(date, '%Y-%m-%d').timestamp() if date else 0.0,
                     'category': 'industry_news',
-                    'tags': [identified_vendor, '放疗厂商'],
+                    'tags': tags,
                     'images': [],
-                    'meta': {'vendor': identified_vendor},
+                    'meta': meta,
                     'ai': _generate_recommendation(identified_vendor, title, content),
                     'extra': {},
                 })
