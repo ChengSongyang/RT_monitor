@@ -15,17 +15,18 @@ export function ThemeSwitcher() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className="flex items-center gap-1 rounded-lg bg-white/5 p-1">
+    <div className="theme-toggle" role="radiogroup" aria-label="主题">
       {themes.map(({ mode, icon: Icon, label }) => (
         <button
           key={mode}
+          type="button"
           onClick={() => setTheme(mode)}
           title={label}
+          role="radio"
+          aria-checked={theme === mode}
           className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-            theme === mode
-              ? "bg-white/15 text-white"
-              : "text-gray-400 hover:text-white hover:bg-white/10"
+            "theme-toggle-option",
+            theme === mode && "theme-toggle-option-active"
           )}
         >
           <Icon className="h-4 w-4" />

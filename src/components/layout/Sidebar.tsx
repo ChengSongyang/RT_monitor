@@ -2,7 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Star, Menu, X, ExternalLink } from "lucide-react";
+import {
+  BookOpenText,
+  ExternalLink,
+  FileClock,
+  ListFilter,
+  Menu,
+  Rss,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeSwitcher } from "@/components/ui/ThemeSwitcher";
 
@@ -15,75 +24,104 @@ export function Sidebar({ className }: SidebarProps) {
 
   return (
     <>
-      {/* Mobile hamburger button */}
-      <button
-        onClick={() => setOpen(true)}
-        className="fixed left-3 top-3 z-[60] flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--sidebar)] border border-[var(--border)] text-[var(--foreground)] md:hidden"
-        aria-label="打开菜单"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
+      <div className="app-mobile-bar">
+        <button
+          onClick={() => setOpen(true)}
+          className="app-hamburger"
+          aria-label="打开菜单"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <Link href="/" className="app-mobile-brand">
+          <span className="app-mobile-brand-text">RT MONITOR</span>
+        </Link>
+        <div className="app-mobile-bar-spacer" />
+      </div>
 
-      {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 z-[55] bg-black/50 md:hidden"
+          className="sidebar-backdrop md:hidden"
           onClick={() => setOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-[60] flex h-full w-[180px] flex-col border-r border-[var(--border)] bg-[var(--sidebar)] py-4 transition-transform duration-200",
-          // Mobile: slide in/out
-          open ? "translate-x-0" : "-translate-x-full",
-          // Desktop: always visible
-          "md:translate-x-0",
+          "sidebar-panel",
+          open && "sidebar-panel-open",
           className
         )}
       >
-        {/* Logo + close button */}
-        <div className="mb-8 flex items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 text-xs font-bold text-white">
-              RT
-            </div>
-            <span className="text-sm font-semibold text-[var(--sidebar-foreground)]">
-              Monitor
-            </span>
-          </div>
-          <button
-            onClick={() => setOpen(false)}
-            className="flex h-7 w-7 items-center justify-center rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] md:hidden"
-            aria-label="关闭菜单"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <button
+          onClick={() => setOpen(false)}
+          className="sidebar-close"
+          aria-label="关闭菜单"
+        >
+          <X className="h-5 w-5" />
+        </button>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3">
+        <Link href="/" className="sidebar-brand" onClick={() => setOpen(false)}>
+          <span className="brand-logo" aria-label="RT Monitor">
+            <span>RT</span>
+            <span className="brand-logo-orbit" aria-hidden="true" />
+            <span className="brand-logo-accent">MONITOR</span>
+          </span>
+        </Link>
+
+        <nav className="side-nav">
           <Link
             href="/"
-            className="flex items-center gap-3 rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-cyan-400 transition-colors"
+            onClick={() => setOpen(false)}
+            className="side-link side-link-active"
           >
-            <Star className="h-4 w-4" />
+            <Sparkles className="side-icon" />
             <span>精选</span>
           </Link>
           <a
-            href="http://47.77.216.151:24830"
+            href="#feed"
+            onClick={() => setOpen(false)}
+            className="side-link"
+          >
+            <ListFilter className="side-icon" />
+            <span>全部动态</span>
+          </a>
+          <a
+            href="#top"
+            onClick={() => setOpen(false)}
+            className="side-link"
+          >
+            <FileClock className="side-icon" />
+            <span>筛选搜索</span>
+          </a>
+          <a
+            href="#feed"
+            onClick={() => setOpen(false)}
+            className="side-link"
+          >
+            <BookOpenText className="side-icon" />
+            <span>研究日报</span>
+          </a>
+          <button
+            type="button"
+            className="side-link text-left"
+            disabled
+            title="后续可接入信源管理"
+          >
+            <Rss className="side-icon" />
+            <span>信源提报</span>
+          </button>
+          <a
+            href="https://aihot.virxact.com/"
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-1 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--sidebar-foreground)] opacity-70 transition-colors hover:bg-white/10 hover:opacity-100"
+            className="side-link"
           >
-            <ExternalLink className="h-4 w-4" />
+            <ExternalLink className="side-icon" />
             <span>AI 热点</span>
           </a>
         </nav>
 
-        {/* Bottom: Theme Switcher */}
-        <div className="px-3">
+        <div className="sidebar-footer">
           <ThemeSwitcher />
         </div>
       </aside>

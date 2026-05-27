@@ -70,57 +70,54 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+    <div className="app-shell text-[var(--foreground)]">
       <Sidebar />
 
-      <main className="p-4 pt-14 md:ml-[180px] md:p-6 md:pt-6">
-        <div className="mx-auto max-w-[800px]">
-          {/* Header */}
-          <div className="mb-6">
-            <div className="mb-4 flex items-center justify-between">
+      <main className="app-main">
+        <div id="top" className="app-main-inner">
+          <section className="page-header-feed mb-4">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h1 className="text-2xl font-bold">精选</h1>
-                <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                <h1 className="page-title">精选</h1>
+                <p className="page-subtitle">
                   放射治疗领域的热点新闻与论文
                 </p>
               </div>
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className="flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm text-[var(--foreground)] hover:bg-white/20 transition-colors disabled:opacity-50"
+                className="refresh-btn"
               >
                 <RefreshCw
                   className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
                 />
-                刷新数据
+                <span className="refresh-label">刷新数据</span>
               </button>
             </div>
 
-            <CategoryFilter
-              activeCategory={activeCategory}
-              onChange={handleCategoryChange}
-            />
+            <div className="page-divider" />
 
-            <div className="mt-4">
+            <div className="feed-toolbar-row">
+              <CategoryFilter
+                activeCategory={activeCategory}
+                onChange={handleCategoryChange}
+              />
               <SearchBar
                 value={searchInput}
                 onChange={setSearchInput}
                 onSearch={handleSearch}
               />
             </div>
-          </div>
+          </section>
 
-          {/* Feed */}
           <FeedList items={items} loading={loading} />
 
-          {/* Pagination */}
           <Pagination
             page={page}
             totalPages={totalPages}
             onPageChange={setPage}
           />
 
-          {/* Total count */}
           {total > 0 && (
             <p className="py-4 text-center text-xs text-[var(--muted-foreground)]">
               共 {total} 条

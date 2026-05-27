@@ -46,6 +46,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement;
     root.classList.remove("dark", "light");
     root.classList.add(resolvedTheme);
+    root.dataset.theme = resolvedTheme;
   }, [resolvedTheme]);
 
   useEffect(() => {

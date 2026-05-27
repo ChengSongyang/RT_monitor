@@ -30,11 +30,12 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
   }
 
   return (
-    <div className="flex items-center justify-center gap-1 pt-6 pb-2">
+    <nav className="pagination-panel" aria-label="分页">
       <button
         onClick={() => onPageChange(page - 1)}
         disabled={page <= 1}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-white/10 hover:text-[var(--foreground)] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+        className="pagination-button"
+        aria-label="上一页"
       >
         <ChevronLeft className="h-4 w-4" />
       </button>
@@ -49,11 +50,10 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
             key={p}
             onClick={() => onPageChange(p)}
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg text-sm transition-colors",
-              p === page
-                ? "bg-white/15 text-white font-medium"
-                : "text-[var(--muted-foreground)] hover:bg-white/10 hover:text-[var(--foreground)]"
+              "pagination-button",
+              p === page && "pagination-button-active"
             )}
+            aria-current={p === page ? "page" : undefined}
           >
             {p}
           </button>
@@ -63,10 +63,11 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
       <button
         onClick={() => onPageChange(page + 1)}
         disabled={page >= totalPages}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-white/10 hover:text-[var(--foreground)] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+        className="pagination-button"
+        aria-label="下一页"
       >
         <ChevronRight className="h-4 w-4" />
       </button>
-    </div>
+    </nav>
   );
 }

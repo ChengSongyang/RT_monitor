@@ -24,17 +24,17 @@ export function ImageGallery({ images }: ImageGalleryProps) {
 
   return (
     <>
-      <div className="flex gap-2 flex-wrap">
+      <div className="image-gallery">
         {images.slice(0, 4).map((src, i) => (
           <button
             key={i}
             onClick={() => openLightbox(i)}
-            className="group relative overflow-hidden rounded-lg border border-[var(--border)]"
+            className="image-gallery-button"
           >
             <img
               src={src}
               alt={`图片 ${i + 1}`}
-              className="h-20 w-20 object-cover transition-transform group-hover:scale-105"
+              className="image-gallery-img"
             />
             {i === 3 && images.length > 4 && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs text-white">
