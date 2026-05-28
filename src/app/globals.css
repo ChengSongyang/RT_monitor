@@ -1089,6 +1089,11 @@ body {
   -webkit-box-orient: vertical;
 }
 
+.timeline-summary-original {
+  color: var(--text-2);
+  -webkit-line-clamp: 2;
+}
+
 .timeline-source-note {
   margin: 6px 0 0;
   color: var(--text-2);

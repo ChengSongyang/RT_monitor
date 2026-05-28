@@ -34,6 +34,17 @@ function getScoreClass(score: number): string {
   return "score-muted";
 }
 
+function getReportHref(item: NewsItem): string {
+  const reportPath = item.report_path || item.meta?.report_path;
+  const reportParts = reportPath?.split("/") || [];
+  if (reportParts.length >= 5 && reportParts[0] === "reports") {
+    return `/${reportPath}`;
+  }
+  const year = item.date?.substring(0, 4) || "2026";
+  const month = item.date?.substring(5, 7) || "01";
+  return `/reports/${year}/${month}/${encodeURIComponent(item.source)}/${encodeURIComponent(item.id)}`;
+}
+
 interface NewsCardProps {
   item: NewsItem;
 }
@@ -41,6 +52,10 @@ interface NewsCardProps {
 export function NewsCard({ item }: NewsCardProps) {
   const score = Math.round(item.recommendation_score || item.hot_score || 0);
   const displaySource = item.source_display_name || item.source;
+  const displayTitle = item.title_cn || item.title;
+  const originalTitle = item.title_cn && item.title_cn !== item.title ? item.title : "";
+  const primarySummary = item.summary_cn || item.summary;
+  const secondarySummary = item.summary_cn && item.summary && item.summary_cn !== item.summary ? item.summary : "";
   const sourceTitle = [
     item.source_collection_method,
     item.source_origin_host,
@@ -101,18 +116,22 @@ export function NewsCard({ item }: NewsCardProps) {
           rel="noopener noreferrer"
           className="timeline-title"
         >
-          {item.title}
+          {displayTitle}
           <ExternalLink className="ml-1 inline h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
         </a>
+
+        {originalTitle && (
+          <p className="timeline-source-note">{originalTitle}</p>
+        )}
 
         {item.source_note && (
           <p className="timeline-source-note">{item.source_note}</p>
         )}
 
-        {item.summary && <p className="timeline-summary">{item.summary}</p>}
+        {primarySummary && <p className="timeline-summary">{primarySummary}</p>}
 
-        {item.summary_cn && item.summary_cn !== item.summary && (
-          <p className="timeline-summary">{item.summary_cn}</p>
+        {secondarySummary && (
+          <p className="timeline-summary timeline-summary-original">{secondarySummary}</p>
         )}
 
         {item.quoted_text && (
@@ -159,7 +178,7 @@ export function NewsCard({ item }: NewsCardProps) {
 
         {item.meta?.report_path && (
           <a
-            href={`/reports/${item.date.substring(0, 4)}/${item.date.substring(5, 7)}/${item.source}/${item.id}`}
+            href={getReportHref(item)}
             className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-[var(--surface-1)] px-3 py-1.5 text-xs font-medium text-[var(--accent-cyan)] transition-colors hover:bg-[var(--surface-2)]"
           >
             <FileText className="h-3 w-3" />

@@ -114,6 +114,20 @@ def clean_html(text: str) -> str:
     return text.strip()
 
 
+def is_noise_content(title: str, content: str) -> bool:
+    text = f'{title} {content}'.lower()
+    cookie_markers = [
+        'manage preferences',
+        'accept all cookies',
+        'reject optional cookies',
+        'skip to main content',
+        'thanks for signing up',
+    ]
+    if sum(1 for marker in cookie_markers if marker in text) >= 2:
+        return True
+    return len(content.strip()) < 40
+
+
 def parse_date(date_str: str) -> str:
     if not date_str:
         return ''  # 不填入当天日期，留空
@@ -318,6 +332,8 @@ def collect(days_back: int = 30) -> List[Dict]:
                     if not title:
                         continue
                     content = clean_html(r.get('content', ''))
+                    if is_noise_content(title, content):
+                        continue
                     seen_urls.add(url)
                     published = r.get('published_date', '') or ''
                     date = parse_date(published)
@@ -358,6 +374,8 @@ def collect(days_back: int = 30) -> List[Dict]:
                 if not title:
                     continue
                 content = clean_html(r.get('content', ''))
+                if is_noise_content(title, content):
+                    continue
                 identified_vendor = identify_vendor(url, title, content)
                 if not identified_vendor:
                     continue

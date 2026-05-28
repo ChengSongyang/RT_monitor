@@ -86,8 +86,47 @@ def has_ai_keyword(text: str) -> bool:
 
 def is_rt_ai_paper(title: str, abstract: str) -> bool:
     """检查是否同时涉及放疗和AI"""
-    combined = title + ' ' + abstract
+    combined = (title or '') + ' ' + (abstract or '')
     return has_rt_keyword(combined) and has_ai_keyword(combined)
+
+
+def is_core_rt_journal(journal: str) -> bool:
+    """红皮/绿皮期刊允许纳入放疗核心论文，不强制 AI 关键词。"""
+    journal_lower = (journal or '').lower()
+    return any(
+        kw in journal_lower
+        for kw in (
+            'int j radiat oncol biol phys',
+            'international journal of radiation oncology',
+            'ijrobp',
+            'red journal',
+            'radiother oncol',
+            'radiotherapy and oncology',
+            'green journal',
+        )
+    )
+
+
+def source_label_for_journal(journal: str, fallback: str = 'PubMed') -> str:
+    journal_lower = (journal or '').lower()
+    if (
+        'int j radiat oncol biol phys' in journal_lower
+        or 'international journal of radiation oncology' in journal_lower
+        or 'ijrobp' in journal_lower
+        or 'red journal' in journal_lower
+    ):
+        return 'IJROBP'
+    if 'radiother oncol' in journal_lower or 'radiotherapy and oncology' in journal_lower or 'green journal' in journal_lower:
+        return 'Radiotherapy and Oncology'
+    return fallback
+
+
+def is_relevant_paper(title: str, abstract: str, journal: str = '') -> bool:
+    """AI+RT papers are relevant; Red/Green Journal RT papers are also relevant."""
+    combined = (title or '') + ' ' + (abstract or '')
+    if is_rt_ai_paper(title, abstract):
+        return True
+    return is_core_rt_journal(journal) and has_rt_keyword(combined)
 
 
 def _parse_timestamp(date_str: str) -> float:
@@ -196,6 +235,8 @@ def search_pubmed(days_back: int = 14, max_results: int = 50) -> List[Dict]:
         'radiotherapy AND large language model',
         'radiotherapy AND segmentation AND deep learning',
         'treatment planning AND machine learning',
+        '"Int J Radiat Oncol Biol Phys"[Journal] AND (radiotherapy OR "radiation therapy" OR "radiation oncology" OR SBRT OR IMRT OR VMAT)',
+        '"Radiother Oncol"[Journal] AND (radiotherapy OR "radiation therapy" OR "radiation oncology" OR SBRT OR IMRT OR VMAT)',
     ]
 
     seen_ids = set()
@@ -242,10 +283,6 @@ def search_pubmed(days_back: int = 14, max_results: int = 50) -> List[Dict]:
                     abstract_elem = art.find('.//Abstract/AbstractText')
                     abstract = abstract_elem.text if abstract_elem is not None else ''
 
-                    # 严格过滤：必须同时涉及放疗和AI
-                    if not is_rt_ai_paper(title, abstract):
-                        continue
-
                     # 作者
                     authors_list = []
                     for author in art.findall('.//AuthorList/Author')[:5]:
@@ -268,14 +305,23 @@ def search_pubmed(days_back: int = 14, max_results: int = 50) -> List[Dict]:
                     # 期刊
                     journal_elem = art.find('.//Journal/Title')
                     journal = journal_elem.text if journal_elem is not None else 'PubMed'
+                    source_label = source_label_for_journal(journal, 'PubMed')
+
+                    # 放疗+AI严格纳入；红皮/绿皮期刊允许放疗核心内容纳入
+                    if not is_relevant_paper(title, abstract, journal):
+                        continue
 
                     papers.append({
-                        'source': 'PubMed',
+                        'source': source_label,
                         'source_type': 'paper',
                         'category': 'paper',
-                        'id': pmid,
+                        'id': make_content_id('pubmed', pmid),
                         'title': title,
+                        'summary': abstract[:220] + ('...' if len(abstract) > 220 else ''),
                         'authors': authors,
+                        'source_user': authors,
+                        'source_verified': True,
+                        'source_verified_reason': '学术论文',
                         'date': date_str,
                         'timestamp': _parse_timestamp(date_str),
                         'content': abstract,
@@ -284,6 +330,14 @@ def search_pubmed(days_back: int = 14, max_results: int = 50) -> List[Dict]:
                         'categories': '',
                         'html_url': '',
                         'journal': journal,
+                        'meta': {
+                            'authors': authors,
+                            'journal': journal,
+                            'pdf_url': '',
+                            'html_url': '',
+                            'doi': '',
+                        },
+                        'tags': ['论文', source_label, journal],
                     })
 
                     time.sleep(0.5)
@@ -381,6 +435,8 @@ def search_semantic_scholar(days_back: int = 14) -> List[Dict]:
                         source_label = 'Radiotherapy and Oncology'
                     elif 'ijrobp' in venue_lower:
                         source_label = 'IJROBP'
+                    else:
+                        source_label = source_label_for_journal(venue, source_label)
 
                 papers.append({
                     'source': source_label,
@@ -397,6 +453,19 @@ def search_semantic_scholar(days_back: int = 14) -> List[Dict]:
                     'categories': f"Citations: {item.get('citationCount', 0)}",
                     'html_url': '',
                     'journal': venue or source_label,
+                    'source_user': authors,
+                    'source_verified': True,
+                    'source_verified_reason': '学术论文',
+                    'summary': abstract[:220] + ('...' if len(abstract) > 220 else ''),
+                    'tags': ['论文', source_label, venue or source_label],
+                    'meta': {
+                        'authors': authors,
+                        'journal': venue or source_label,
+                        'pdf_url': pdf_url,
+                        'html_url': '',
+                        'doi': doi,
+                        'citation_count': item.get('citationCount', 0),
+                    },
                 })
         except Exception as e:
             print(f"  [WARN] Parse error for Semantic Scholar: {e}", file=sys.stderr)
@@ -423,29 +492,21 @@ def collect(days_back: int = 14) -> List[Dict]:
 
     unique_papers = deduplicate(all_papers)
 
-    # 为每篇论文生成专家推荐理由
-    try:
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-        from generate_expert_recommendations import generate_expert_recommendation
-        for p in unique_papers:
-            journal = p.get('journal', p.get('source', ''))
-            result = generate_expert_recommendation(
-                p.get('title', ''), p.get('content', '') or p.get('abstract', ''),
-                p.get('source', ''), journal, 'paper'
-            )
-            p['ai'] = {
-                'score': result['score'],
-                'is_featured': result['is_featured'],
-                'recommendation_reason': result['recommendation_reason'],
-                'tech_areas': result.get('tech_areas', []),
-                'cancer_types': result.get('cancer_types', []),
-                'study_type': result.get('study_type', ''),
-            }
-        print(f"  ✅ 共找到 {len(unique_papers)} 篇放疗+AI论文（含专家评论）", file=sys.stderr)
-    except Exception as e:
-        print(f"  ⚠️ 评论生成失败: {e}", file=sys.stderr)
-        for p in unique_papers:
-            p['ai'] = {'score': 70, 'is_featured': False, 'recommendation_reason': ''}
-        print(f"  ✅ 共找到 {len(unique_papers)} 篇放疗+AI论文", file=sys.stderr)
+    for p in unique_papers:
+        p.setdefault('summary', (p.get('content') or '')[:220])
+        p.setdefault('source_user', p.get('authors', ''))
+        p.setdefault('source_verified', True)
+        p.setdefault('source_verified_reason', '学术论文')
+        p.setdefault('tags', ['论文', p.get('source', ''), p.get('journal', '')])
+        p.setdefault('meta', {
+            'authors': p.get('authors', ''),
+            'journal': p.get('journal', p.get('source', '')),
+            'pdf_url': p.get('pdf_url', ''),
+            'html_url': p.get('html_url', ''),
+            'doi': p.get('doi', ''),
+        })
+        p.setdefault('ai', {'score': 70, 'is_featured': False, 'recommendation_reason': ''})
+
+    print(f"  ✅ 共找到 {len(unique_papers)} 篇放疗论文（含红皮/绿皮与AI方向）", file=sys.stderr)
 
     return unique_papers

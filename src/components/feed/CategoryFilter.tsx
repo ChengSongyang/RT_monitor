@@ -7,8 +7,6 @@ const categories = [
   { key: "paper", label: "论文" },
   { key: "industry_news", label: "行业" },
   { key: "guideline", label: "指南" },
-  { key: "research", label: "研究" },
-  { key: "conference", label: "会议" },
 ];
 
 interface CategoryFilterProps {

@@ -7,11 +7,13 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from db import init_db, upsert_content, log_sync
-from sources import google_news, papers, vendor_news
+from llm_enrichment import enrich_items
+from sources import google_news, guidelines, papers, vendor_news
 
 
 SOURCES = [
     ('papers', papers),                 # 放疗+AI论文
+    ('guidelines', guidelines),         # 常见癌种/协会指南入口
     ('vendor_news', vendor_news),       # 指定厂商官网/相关新闻
     ('radiotherapy_news', google_news), # 行业新闻与学会/监管动态
 ]
@@ -25,6 +27,7 @@ def collect_all(days_back: int = 14):
         print(f"\n📡 采集 {name}...", file=sys.stderr)
         try:
             items = source.collect(days_back=days_back)
+            items = enrich_items(items, source_name=name)
             stats = upsert_content(items)
             log_sync(name, stats['found'], stats['new'], stats['updated'])
             total_stats['found'] += stats['found']

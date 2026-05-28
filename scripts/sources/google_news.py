@@ -209,9 +209,16 @@ def collect(days_back: int = 7) -> List[Dict]:
             if any(kw in text_lower for kw in ['新设备', '新技', '设备', '技术']):
                 tags.append('技术创新')
 
-            # 判断分类
-            if any(kw in text_lower for kw in ['论文', '研究', 'study', 'analysis', 'trial', 'randomized']):
+            # Tavily news results are treated as news unless the URL is a real
+            # academic database/journal record. Conference/research tabs are no
+            # longer surfaced in the UI, so keep reports in industry_news.
+            if meta.get('source_kind') in ('academic', 'journal') and any(
+                host in url.lower()
+                for host in ('pubmed.ncbi.nlm.nih.gov', 'arxiv.org', 'doi.org', 'redjournal.org', 'thegreenjournal.com')
+            ):
                 category = 'paper'
+            elif any(kw in text_lower for kw in ['guideline', '指南', 'consensus', '共识']):
+                category = 'guideline'
             else:
                 category = 'industry_news'
 

@@ -111,7 +111,7 @@ export function Sidebar({ className }: SidebarProps) {
             <span>信源提报</span>
           </button>
           <a
-            href="https://aihot.virxact.com/"
+            href="http://47.77.216.151:24830/"
             target="_blank"
             rel="noopener noreferrer"
             className="side-link"

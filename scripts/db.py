@@ -6,6 +6,7 @@ SQLite 数据库操作层
 import sqlite3
 import json
 import os
+import re
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 
@@ -110,6 +111,136 @@ def _json_load(value: Any, fallback: Any) -> Any:
         return fallback
 
 
+def _slugify_path(value: str) -> str:
+    value = (value or '').strip().lower()
+    value = re.sub(r'[^a-z0-9\u4e00-\u9fff]+', '-', value)
+    return re.sub(r'-+', '-', value).strip('-') or 'unknown'
+
+
+def _parse_year_month(date_str: str) -> tuple[int, int]:
+    date_str = (date_str or '').strip()
+    now = datetime.now()
+
+    patterns = (
+        '%Y-%m-%d',
+        '%Y/%m/%d',
+        '%Y-%m',
+        '%Y %b %d',
+        '%Y %B %d',
+        '%Y %b',
+        '%Y %B',
+        '%b %d, %Y',
+        '%B %d, %Y',
+    )
+    for pattern in patterns:
+        try:
+            parsed = datetime.strptime(date_str[:max(len(date_str), len(pattern))], pattern)
+            return parsed.year, parsed.month
+        except Exception:
+            continue
+
+    if len(date_str) >= 4 and date_str[:4].isdigit():
+        return int(date_str[:4]), now.month
+    return now.year, now.month
+
+
+def _core_journal_source(journal: str, fallback: str) -> str:
+    journal_lower = (journal or '').lower()
+    if (
+        'int j radiat oncol biol phys' in journal_lower
+        or 'international journal of radiation oncology' in journal_lower
+        or 'ijrobp' in journal_lower
+        or 'red journal' in journal_lower
+    ):
+        return 'IJROBP'
+    if 'radiother oncol' in journal_lower or 'radiotherapy and oncology' in journal_lower or 'green journal' in journal_lower:
+        return 'Radiotherapy and Oncology'
+    return fallback
+
+
+def _content_id(source: str, raw_id: str, url: str = '') -> str:
+    raw_id = str(raw_id or '').strip()
+    if raw_id:
+        lowered = raw_id.lower()
+        if lowered.startswith(('pubmed_', 'arxiv_', 'semantic_scholar_', 'tavily_', 'vendor_news_', 'guideline_')):
+            return raw_id.replace(' ', '_')
+
+    source_slug = _slugify_path(source).replace('-', '_')
+    if not raw_id:
+        raw_id = str(abs(hash(url or source or datetime.now().isoformat())))
+
+    if source_slug in ('pubmed', 'arxiv', 'semantic_scholar', 'semanticscholar', 'ijrobp', 'radiotherapy_and_oncology'):
+        return f'{source_slug}_{raw_id}'.replace(' ', '_')
+    return raw_id.replace(' ', '_')
+
+
+def _report_path_for(item: Dict[str, Any]) -> str:
+    year, month = _parse_year_month(item.get('date', ''))
+    source = _slugify_path(item.get('source') or item.get('source_type') or 'source')
+    return f"reports/{year}/{month:02d}/{source}/{item['id']}"
+
+
+def _normalize_content_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(item)
+
+    meta = _json_load(normalized.get('meta'), {})
+    ai = _json_load(normalized.get('ai'), {})
+    extra = _json_load(normalized.get('extra'), {})
+
+    for key in ('authors', 'journal', 'pdf_url', 'html_url', 'doi', 'citation_count', 'categories'):
+        value = normalized.get(key)
+        if value not in (None, '') and key not in meta:
+            meta[key] = value
+
+    source = normalized.get('source', '') or meta.get('source', '')
+    journal = meta.get('journal') or normalized.get('journal') or ''
+    source = _core_journal_source(journal, source)
+    normalized['source'] = source
+
+    normalized['id'] = _content_id(source, normalized.get('id', ''), normalized.get('url', ''))
+    normalized['title'] = normalized.get('title') or normalized.get('title_cn') or '未命名内容'
+    normalized['content'] = normalized.get('content') or normalized.get('abstract') or ''
+    normalized['summary'] = normalized.get('summary') or normalized.get('description') or normalized['content'][:240]
+    normalized['source_type'] = normalized.get('source_type') or ('paper' if normalized.get('category') == 'paper' else 'news')
+    normalized['source_user'] = normalized.get('source_user') or normalized.get('authors') or meta.get('authors', '')
+    normalized['source_verified'] = bool(normalized.get('source_verified'))
+    normalized['source_verified_reason'] = normalized.get('source_verified_reason', '')
+    normalized['date'] = normalized.get('date') or ''
+    normalized['timestamp'] = normalized.get('timestamp') or 0
+    normalized['category'] = normalized.get('category') or ('paper' if normalized['source_type'] == 'paper' else 'industry_news')
+
+    tags = _json_load(normalized.get('tags'), [])
+    if not isinstance(tags, list):
+        tags = []
+    for tag in (normalized['source'], journal, normalized['category']):
+        if tag and tag not in tags:
+            tags.append(tag)
+    normalized['tags'] = tags[:12]
+
+    images = _json_load(normalized.get('images'), [])
+    normalized['images'] = images if isinstance(images, list) else []
+
+    for flat_key in ('title_cn', 'summary_cn', 'recommendation_reason'):
+        value = normalized.get(flat_key)
+        if value and not ai.get(flat_key):
+            ai[flat_key] = value
+    if 'score' in normalized and 'score' not in ai:
+        ai['score'] = normalized.get('score')
+    if 'is_featured' in normalized and 'is_featured' not in ai:
+        ai['is_featured'] = normalized.get('is_featured')
+
+    report_md = normalized.pop('report_md', '') or normalized.pop('md_content', '')
+    if report_md:
+        meta['report_path'] = _report_path_for(normalized)
+        meta['report_type'] = meta.get('report_type') or 'ai_analysis'
+        normalized['_report_md'] = report_md
+
+    normalized['meta'] = meta
+    normalized['ai'] = ai
+    normalized['extra'] = extra
+    return normalized
+
+
 def _decode_content_row(row: sqlite3.Row) -> Dict:
     item = dict(row)
     item['tags'] = _json_load(item.get('tags'), [])
@@ -123,6 +254,7 @@ def _decode_content_row(row: sqlite3.Row) -> Dict:
     item['hot_score'] = item['ai'].get('score', 0)
     item['is_featured'] = item['ai'].get('is_featured', False)
     item['recommendation_reason'] = item['ai'].get('recommendation_reason', '')
+    item['title_cn'] = item['ai'].get('title_cn', '')
     item['summary_cn'] = item['ai'].get('summary_cn', '')
     item['quoted_text'] = item['extra'].get('quoted_text', '')
     item['quoted_author'] = item['extra'].get('quoted_author', '')
@@ -201,16 +333,28 @@ def upsert_content(items: List[Dict]) -> Dict:
     conn = get_db()
     stats = {'found': len(items), 'new': 0, 'updated': 0}
 
-    for item in items:
+    for raw_item in items:
+        item = _normalize_content_item(raw_item)
         existing = conn.execute(
-            'SELECT id FROM content WHERE id = ?', (item['id'],)
+            'SELECT id FROM content WHERE id = ?',
+            (item['id'],),
         ).fetchone()
+        if not existing and item.get('url'):
+            existing = conn.execute(
+                'SELECT id FROM content WHERE url <> "" AND url = ?',
+                (item.get('url', ''),),
+            ).fetchone()
+        if existing and existing['id'] != item['id']:
+            item['id'] = existing['id']
+            if item.get('_report_md'):
+                item['meta']['report_path'] = _report_path_for(item)
 
         tags = json.dumps(item.get('tags', []), ensure_ascii=False)
         images = json.dumps(item.get('images', []), ensure_ascii=False)
         meta = json.dumps(item.get('meta', {}), ensure_ascii=False)
         ai = json.dumps(item.get('ai', {}), ensure_ascii=False)
         extra = json.dumps(item.get('extra', {}), ensure_ascii=False)
+        report_md = item.get('_report_md', '')
 
         if existing:
             conn.execute('''UPDATE content SET
@@ -250,6 +394,23 @@ def upsert_content(items: List[Dict]) -> Dict:
                 tags, images, meta, ai, extra
             ))
             stats['new'] += 1
+
+        if report_md:
+            report_path = item.get('meta', {}).get('report_path') or _report_path_for(item)
+            year, month = _parse_year_month(item.get('date', ''))
+            source_slug = _slugify_path(item.get('source', 'source'))
+            conn.execute('''INSERT OR REPLACE INTO reports
+                (id, content_id, report_type, file_path, year, month, source, md_content)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', (
+                item['id'],
+                item['id'],
+                item.get('meta', {}).get('report_type', 'ai_analysis'),
+                report_path,
+                year,
+                month,
+                source_slug,
+                report_md,
+            ))
 
     conn.commit()
     conn.close()

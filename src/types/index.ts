@@ -1,6 +1,7 @@
 export interface NewsItem {
   id: string;
   title: string;
+  title_cn?: string;
   content: string;
   summary: string;
   source: string;
@@ -38,6 +39,7 @@ export interface NewsItem {
   pdf_url?: string;
   html_url?: string;
   journal?: string;
+  report_path?: string;
   is_featured: boolean;
   quoted_text?: string;
   quoted_author?: string;
