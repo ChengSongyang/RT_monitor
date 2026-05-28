@@ -114,6 +114,6 @@ def collect(days_back: int = 7, max_results: int = 50) -> List[Dict]:
         except Exception as e:
             print(f"  [WARN] Parse error for Semantic Scholar: {e}", file=sys.stderr)
 
-        time.sleep(2)
+        time.sleep(3)  # Semantic Scholar 免费API限100请求/5分钟
 
     return deduplicate(papers)

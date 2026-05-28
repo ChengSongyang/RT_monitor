@@ -14,16 +14,13 @@ def collect(days_back: int = 7, max_results: int = 50) -> List[Dict]:
     queries = [
         'all:radiotherapy+AND+all:large+language+model',
         'all:radiotherapy+AND+all:deep+learning',
-        'all:radiation+therapy+AND+all:transformer',
         'all:radiation+oncology+AND+all:artificial+intelligence',
-        'all:radiotherapy+AND+all:foundation+model',
-        'all:radiotherapy+AND+all:segmentation+AND+cat:cs.CV',
     ]
 
     seen_ids = set()
     for query in queries:
         url = f"https://export.arxiv.org/api/query?search_query={query}&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
-        data = fetch_url(url)
+        data = fetch_url(url, max_retries=4)  # arXiv 限流严，多给几次重试
         if not data:
             continue
 
@@ -74,6 +71,6 @@ def collect(days_back: int = 7, max_results: int = 50) -> List[Dict]:
                 })
         except Exception as e:
             print(f"  [WARN] Parse error for arXiv: {e}", file=sys.stderr)
-        time.sleep(4)
+        time.sleep(8)  # arXiv 限流严格，加大间隔
 
     return deduplicate(papers)
