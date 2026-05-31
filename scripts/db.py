@@ -20,6 +20,7 @@ from source_catalog import (
     source_catalog_summary,
     source_filter_terms,
 )
+from rss_source_catalog import RSS_SOURCES
 
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'rt_monitor.db')
 
@@ -344,6 +345,18 @@ def upsert_content(items: List[Dict]) -> Dict:
                 'SELECT id FROM content WHERE url <> "" AND url = ?',
                 (item.get('url', ''),),
             ).fetchone()
+        doi = str(item.get('meta', {}).get('doi', '')).strip().lower()
+        if not existing and doi:
+            existing = conn.execute(
+                'SELECT id FROM content WHERE lower(json_extract(meta, \'$.doi\')) = ?',
+                (doi,),
+            ).fetchone()
+        arxiv_id = str(item.get('meta', {}).get('arxiv_id', '')).strip().lower()
+        if not existing and arxiv_id:
+            existing = conn.execute(
+                'SELECT id FROM content WHERE lower(json_extract(meta, \'$.arxiv_id\')) = ?',
+                (arxiv_id,),
+            ).fetchone()
         if existing and existing['id'] != item['id']:
             item['id'] = existing['id']
             if item.get('_report_md'):
@@ -526,6 +539,43 @@ def _recent_syncs(conn: sqlite3.Connection, limit: int = 12) -> List[Dict[str, A
         (limit,),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def query_rss_sources() -> Dict[str, Any]:
+    conn = get_db()
+
+    latest_syncs: Dict[str, Dict[str, Any]] = {}
+    rows = conn.execute(
+        'SELECT source, items_found, items_new, items_updated, status, error_message, created_at '
+        'FROM sync_log WHERE source IN ({}) ORDER BY created_at DESC, id DESC'.format(
+            ','.join(['?'] * len(RSS_SOURCES))
+        ),
+        [source['id'] for source in RSS_SOURCES],
+    ).fetchall()
+    for row in rows:
+        source_id = row['source']
+        if source_id not in latest_syncs:
+            latest_syncs[source_id] = dict(row)
+
+    sources: List[Dict[str, Any]] = []
+    for catalog_source in RSS_SOURCES:
+        source = dict(catalog_source)
+        sync = latest_syncs.get(source['id'], {})
+        source['last_sync_at'] = sync.get('created_at', '')
+        source['items_found'] = sync.get('items_found', 0)
+        source['items_new'] = sync.get('items_new', 0)
+        source['items_updated'] = sync.get('items_updated', 0)
+        source['status'] = sync.get('status', 'pending')
+        source['error_message'] = sync.get('error_message', '')
+        sources.append(source)
+
+    conn.close()
+    return {
+        'sources': sources,
+        'total_sources': len(sources),
+        'enabled_sources': sum(1 for source in sources if source.get('enabled')),
+        'active_sources': sum(1 for source in sources if source.get('status') == 'success'),
+    }
 
 
 def query_sources(source_kind: Optional[str] = None, include_empty: bool = True) -> Dict:

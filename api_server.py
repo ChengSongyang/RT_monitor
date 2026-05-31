@@ -11,7 +11,7 @@ import urllib.parse
 
 # 将 scripts 目录加入 sys.path 以便导入 db 模块
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
-from db import init_db, query_content, get_report, log_sync, query_sources, query_stats
+from db import init_db, query_content, get_report, log_sync, query_rss_sources, query_sources, query_stats
 
 
 class APIHandler(BaseHTTPRequestHandler):
@@ -74,6 +74,10 @@ class APIHandler(BaseHTTPRequestHandler):
             include_empty_str = query.get('include_empty', ['true'])[0]
             include_empty = include_empty_str.lower() not in ('false', '0', 'no')
             data = query_sources(source_kind=source_kind, include_empty=include_empty)
+            self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+
+        elif path == '/api/rss-sources':
+            data = query_rss_sources()
             self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
 
         elif path.startswith('/api/reports/'):
@@ -154,6 +158,7 @@ def main():
     print(f"   GET /api/papers - List papers", file=sys.stderr)
     print(f"   GET /api/news - List news", file=sys.stderr)
     print(f"   GET /api/sources - Source catalog and coverage", file=sys.stderr)
+    print(f"   GET /api/rss-sources - RSS source status", file=sys.stderr)
     print(f"   GET /api/stats - Statistics", file=sys.stderr)
     print(f"   GET /api/reports/<content_id> - Get report", file=sys.stderr)
     print(f"   POST /api/refresh - Refresh data", file=sys.stderr)
