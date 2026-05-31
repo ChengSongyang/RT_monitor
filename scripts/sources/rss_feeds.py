@@ -11,43 +11,7 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from . import deduplicate, fetch_url, make_content_id
-
-try:  # Task 1 provides this module on the integration branch.
-    from rss_source_catalog import enabled_rss_sources
-except ModuleNotFoundError:  # Keep Task 2 runnable in an isolated branch if Task 1 is absent.
-    def enabled_rss_sources() -> List[Dict[str, object]]:
-        return [
-            {
-                'id': 'arxiv-radiotherapy-ai',
-                'name': 'arXiv Radiotherapy AI',
-                'short_name': 'arXiv',
-                'kind': 'academic',
-                'feed_url': 'https://export.arxiv.org/api/query?search_query=all:radiotherapy+AND+%28all:artificial+intelligence+OR+all:deep+learning+OR+all:machine+learning+OR+all:auto-contouring%29&max_results=25&sortBy=submittedDate&sortOrder=descending',
-                'homepage': 'https://arxiv.org/',
-                'base_score': 70,
-                'trust_level': 'medium',
-            },
-            {
-                'id': 'ijrobp-rss',
-                'name': 'International Journal of Radiation Oncology Biology Physics',
-                'short_name': 'Red Journal',
-                'kind': 'journal',
-                'feed_url': 'https://www.redjournal.org/current.rss',
-                'homepage': 'https://www.redjournal.org/',
-                'base_score': 72,
-                'trust_level': 'high',
-            },
-            {
-                'id': 'radiotherapy-oncology-rss',
-                'name': 'Radiotherapy and Oncology',
-                'short_name': 'Green Journal',
-                'kind': 'journal',
-                'feed_url': 'https://www.thegreenjournal.com/current.rss',
-                'homepage': 'https://www.thegreenjournal.com/',
-                'base_score': 72,
-                'trust_level': 'high',
-            },
-        ]
+from rss_source_catalog import enabled_rss_sources
 
 
 AI_TERMS = (
@@ -352,7 +316,7 @@ def collect_source(source: Dict[str, object], days_back: int = 14) -> List[Dict[
 
     data = fetch_url(feed_url, max_retries=4 if _is_arxiv_source(source) else 3)
     if not data:
-        return []
+        raise ValueError('Feed request returned empty response')
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
     items: List[Dict[str, object]] = []
