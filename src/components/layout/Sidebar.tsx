@@ -16,10 +16,11 @@ import { cn } from "@/lib/utils";
 import { ThemeSwitcher } from "@/components/ui/ThemeSwitcher";
 
 interface SidebarProps {
+  active?: "home" | "rss-sources";
   className?: string;
 }
 
-export function Sidebar({ className }: SidebarProps) {
+export function Sidebar({ active = "home", className }: SidebarProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -72,7 +73,7 @@ export function Sidebar({ className }: SidebarProps) {
           <Link
             href="/"
             onClick={() => setOpen(false)}
-            className="side-link side-link-active"
+            className={cn("side-link", active === "home" && "side-link-active")}
           >
             <Sparkles className="side-icon" />
             <span>精选</span>
@@ -101,15 +102,17 @@ export function Sidebar({ className }: SidebarProps) {
             <BookOpenText className="side-icon" />
             <span>研究日报</span>
           </a>
-          <button
-            type="button"
-            className="side-link text-left"
-            disabled
-            title="后续可接入信源管理"
+          <Link
+            href="/rss-sources"
+            onClick={() => setOpen(false)}
+            className={cn(
+              "side-link",
+              active === "rss-sources" && "side-link-active"
+            )}
           >
             <Rss className="side-icon" />
-            <span>信源提报</span>
-          </button>
+            <span>RSS 订阅源</span>
+          </Link>
           <a
             href="http://47.77.216.151:24830/"
             target="_blank"
