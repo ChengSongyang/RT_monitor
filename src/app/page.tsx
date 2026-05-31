@@ -74,7 +74,7 @@ export default function HomePage() {
 
   return (
     <div className="app-shell text-[var(--foreground)]">
-      <Sidebar />
+      <Sidebar active="home" />
 
       <main className="app-main">
         <div id="top" className="app-main-inner">
