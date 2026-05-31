@@ -35,7 +35,7 @@ RADIOTHERAPY_TERMS = (
 )
 
 DOI_RE = re.compile(r'\b(?:doi:\s*|https?://(?:dx\.)?doi\.org/)?(10\.\d{4,9}/[^\s<>"]+)', re.IGNORECASE)
-ARXIV_RE = re.compile(r'(?:arxiv:|arxiv\.org/(?:abs|pdf)/)?(\d{4}\.\d{4,5})(?:v\d+)?', re.IGNORECASE)
+ARXIV_RE = re.compile(r'(?:arxiv:|arxiv\.org/(?:abs|pdf)/)(\d{4}\.\d{4,5})(?:v\d+)?', re.IGNORECASE)
 TAG_RE = re.compile(r'<[^>]+>')
 WHITESPACE_RE = re.compile(r'\s+')
 
@@ -100,10 +100,7 @@ def _extract_doi(*values: str) -> str:
 
 def _extract_arxiv_id(*values: str) -> str:
     for value in values:
-        text = value or ''
-        if 'arxiv' not in text.lower():
-            continue
-        match = ARXIV_RE.search(text)
+        match = ARXIV_RE.search(value or '')
         if match:
             return match.group(1)
     return ''
