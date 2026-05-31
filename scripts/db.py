@@ -345,6 +345,18 @@ def upsert_content(items: List[Dict]) -> Dict:
                 'SELECT id FROM content WHERE url <> "" AND url = ?',
                 (item.get('url', ''),),
             ).fetchone()
+        doi = str(item.get('meta', {}).get('doi', '')).strip().lower()
+        if not existing and doi:
+            existing = conn.execute(
+                'SELECT id FROM content WHERE lower(json_extract(meta, \'$.doi\')) = ?',
+                (doi,),
+            ).fetchone()
+        arxiv_id = str(item.get('meta', {}).get('arxiv_id', '')).strip().lower()
+        if not existing and arxiv_id:
+            existing = conn.execute(
+                'SELECT id FROM content WHERE lower(json_extract(meta, \'$.arxiv_id\')) = ?',
+                (arxiv_id,),
+            ).fetchone()
         if existing and existing['id'] != item['id']:
             item['id'] = existing['id']
             if item.get('_report_md'):

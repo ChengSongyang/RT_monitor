@@ -235,10 +235,12 @@ def _score_reason(source: Dict[str, object], entry: Dict[str, str], score: int) 
 
 
 def _entry_unique_id(source: Dict[str, object], entry: Dict[str, str]) -> str:
-    if entry.get('doi'):
-        raw = entry['doi']
-    elif entry.get('arxiv_id'):
-        raw = entry['arxiv_id']
+    arxiv_id = entry.get('arxiv_id', '')
+    doi = entry.get('doi', '')
+    if arxiv_id:
+        return make_content_id('arxiv', arxiv_id)
+    if doi:
+        raw = doi
     elif entry.get('id'):
         raw = entry['id']
     elif entry.get('link'):
@@ -262,6 +264,8 @@ def _content_item(source: Dict[str, object], entry: Dict[str, str]) -> Dict[str,
     arxiv_id = entry.get('arxiv_id', '')
     doi = entry.get('doi', '')
     link = entry.get('link') or entry.get('id') or ''
+    if arxiv_id:
+        link = f'https://arxiv.org/abs/{arxiv_id}'
 
     tags = ['论文', 'RSS', source_name]
     if _is_arxiv_source(source):

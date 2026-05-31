@@ -15,6 +15,9 @@ export async function GET() {
       cache: "no-store",
     });
     const data = await response.json();
+    if (!response.ok) {
+      return NextResponse.json(data, { status: response.status });
+    }
 
     return NextResponse.json(data);
   } catch (error) {
