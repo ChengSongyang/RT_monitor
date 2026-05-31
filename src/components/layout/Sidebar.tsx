@@ -22,6 +22,8 @@ interface SidebarProps {
 
 export function Sidebar({ active = "home", className }: SidebarProps) {
   const [open, setOpen] = useState(false);
+  const feedHref = active === "home" ? "#feed" : "/#feed";
+  const topHref = active === "home" ? "#top" : "/#top";
 
   return (
     <>
@@ -79,7 +81,7 @@ export function Sidebar({ active = "home", className }: SidebarProps) {
             <span>精选</span>
           </Link>
           <a
-            href="#feed"
+            href={feedHref}
             onClick={() => setOpen(false)}
             className="side-link"
           >
@@ -87,7 +89,7 @@ export function Sidebar({ active = "home", className }: SidebarProps) {
             <span>全部动态</span>
           </a>
           <a
-            href="#top"
+            href={topHref}
             onClick={() => setOpen(false)}
             className="side-link"
           >
@@ -95,7 +97,7 @@ export function Sidebar({ active = "home", className }: SidebarProps) {
             <span>筛选搜索</span>
           </a>
           <a
-            href="#feed"
+            href={feedHref}
             onClick={() => setOpen(false)}
             className="side-link"
           >
