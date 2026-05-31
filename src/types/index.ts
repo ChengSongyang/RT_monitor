@@ -170,3 +170,35 @@ export interface SourceCatalogResponse {
     created_at: string;
   }>;
 }
+
+export interface RssSource {
+  id: string;
+  name: string;
+  short_name: string;
+  kind: string;
+  kind_label: string;
+  source: string;
+  source_type: string;
+  category: string;
+  feed_url: string;
+  homepage: string;
+  enabled: boolean;
+  trust_level: string;
+  collection_method: string;
+  description: string;
+  base_score: number;
+  tags: string[];
+  last_sync_at: string;
+  items_found: number;
+  items_new: number;
+  items_updated: number;
+  status: string;
+  error_message: string;
+}
+
+export interface RssSourcesResponse {
+  sources: RssSource[];
+  total_sources: number;
+  enabled_sources: number;
+  active_sources: number;
+}
