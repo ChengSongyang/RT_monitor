@@ -14,7 +14,10 @@ export async function GET() {
     const response = await fetch(`${API_BASE_URL}/api/rss-sources`, {
       cache: "no-store",
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => ({
+      ...fallback,
+      error: "Failed to fetch RSS sources",
+    }));
     if (!response.ok) {
       return NextResponse.json(data, { status: response.status });
     }

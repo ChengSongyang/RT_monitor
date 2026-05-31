@@ -100,7 +100,10 @@ def _extract_doi(*values: str) -> str:
 
 def _extract_arxiv_id(*values: str) -> str:
     for value in values:
-        match = ARXIV_RE.search(value or '')
+        text = value or ''
+        if 'arxiv' not in text.lower():
+            continue
+        match = ARXIV_RE.search(text)
         if match:
             return match.group(1)
     return ''
@@ -237,7 +240,7 @@ def _score_reason(source: Dict[str, object], entry: Dict[str, str], score: int) 
 def _entry_unique_id(source: Dict[str, object], entry: Dict[str, str]) -> str:
     arxiv_id = entry.get('arxiv_id', '')
     doi = entry.get('doi', '')
-    if arxiv_id:
+    if _is_arxiv_source(source) and arxiv_id:
         return make_content_id('arxiv', arxiv_id)
     if doi:
         raw = doi
@@ -264,7 +267,7 @@ def _content_item(source: Dict[str, object], entry: Dict[str, str]) -> Dict[str,
     arxiv_id = entry.get('arxiv_id', '')
     doi = entry.get('doi', '')
     link = entry.get('link') or entry.get('id') or ''
-    if arxiv_id:
+    if _is_arxiv_source(source) and arxiv_id:
         link = f'https://arxiv.org/abs/{arxiv_id}'
 
     tags = ['论文', 'RSS', source_name]
@@ -275,7 +278,7 @@ def _content_item(source: Dict[str, object], entry: Dict[str, str]) -> Dict[str,
 
     pdf_url = ''
     html_url = ''
-    if arxiv_id:
+    if _is_arxiv_source(source) and arxiv_id:
         html_url = f'https://arxiv.org/abs/{arxiv_id}'
         pdf_url = f'https://arxiv.org/pdf/{arxiv_id}'
     elif doi:
