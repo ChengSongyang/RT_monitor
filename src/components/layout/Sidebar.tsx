@@ -105,7 +105,7 @@ export function Sidebar({ active = "home", className }: SidebarProps) {
             <span>研究日报</span>
           </a>
           <Link
-            href="/rss-sources"
+            href="/#rss"
             onClick={() => setOpen(false)}
             className={cn(
               "side-link",

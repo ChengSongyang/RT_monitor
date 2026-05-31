@@ -70,6 +70,12 @@ class APIHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
 
         elif path == '/api/sources':
+            view = query.get('view', [None])[0]
+            if view == 'rss':
+                data = query_rss_sources()
+                self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+                return
+
             source_kind = query.get('kind', [None])[0] or query.get('source_kind', [None])[0]
             include_empty_str = query.get('include_empty', ['true'])[0]
             include_empty = include_empty_str.lower() not in ('false', '0', 'no')

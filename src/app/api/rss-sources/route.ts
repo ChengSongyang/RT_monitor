@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:8001";
+const API_BASE_URL = process.env.API_BASE_URL || "http://127.0.0.1:8001";
 
 const fallback = {
   sources: [],
@@ -11,7 +11,7 @@ const fallback = {
 
 export async function GET() {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/rss-sources`, {
+    const response = await fetch(`${API_BASE_URL}/api/sources?view=rss`, {
       cache: "no-store",
     });
     const data = await response.json().catch(() => ({

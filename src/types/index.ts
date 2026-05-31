@@ -187,6 +187,7 @@ export interface RssSource {
   collection_method: string;
   description: string;
   base_score: number;
+  max_items_per_run: number;
   tags: string[];
   last_sync_at: string;
   items_found: number;

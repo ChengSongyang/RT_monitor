@@ -8,6 +8,7 @@ import { SearchBar } from "@/components/feed/SearchBar";
 import { FeedList } from "@/components/feed/FeedList";
 import { Pagination } from "@/components/feed/Pagination";
 import { SourceOverview } from "@/components/feed/SourceOverview";
+import RssSourcesClient from "@/app/rss-sources/RssSourcesClient";
 import type { NewsItem, PaginatedResponse } from "@/types";
 
 const ITEMS_PER_PAGE = 20;
@@ -23,6 +24,17 @@ export default function HomePage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [sourceRefreshKey, setSourceRefreshKey] = useState(0);
+  const [view, setView] = useState<"home" | "rss">("home");
+
+  useEffect(() => {
+    const updateView = () => {
+      setView(window.location.hash === "#rss" ? "rss" : "home");
+    };
+
+    updateView();
+    window.addEventListener("hashchange", updateView);
+    return () => window.removeEventListener("hashchange", updateView);
+  }, []);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -71,6 +83,10 @@ export default function HomePage() {
     setSearchQuery(searchInput);
     setPage(1);
   };
+
+  if (view === "rss") {
+    return <RssSourcesClient />;
+  }
 
   return (
     <div className="app-shell text-[var(--foreground)]">

@@ -7,6 +7,7 @@ const contentTypeLabels: Record<string, string> = {
   industry_news: "行业动态",
   guideline: "指南共识",
   research: "研究进展",
+  regulatory: "监管/安全",
   conference: "学术会议",
   case_report: "病例报告",
   discussion: "讨论",

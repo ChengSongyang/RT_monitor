@@ -12,7 +12,7 @@ from sources import google_news, guidelines, papers, rss_feeds, vendor_news
 
 
 SOURCES = [
-    ('rss_feeds', rss_feeds),           # RSS/Atom论文信源
+    ('rss_feeds', rss_feeds),           # RSS/Atom论文、新闻与监管信源
     ('papers', papers),                 # 放疗+AI论文
     ('guidelines', guidelines),         # 常见癌种/协会指南入口
     ('vendor_news', vendor_news),       # 指定厂商官网/相关新闻

@@ -14,6 +14,9 @@
 
   # 直接运行监控脚本并导入
   python3 scripts/import_cron_results.py --run-monitor
+
+  # 只导入旧论文结果，不触发 RSS
+  python3 scripts/import_cron_results.py --run-monitor --skip-rss
 """
 import sys
 import os
@@ -215,6 +218,8 @@ def main():
     parser.add_argument('--run-monitor', action='store_true', help='直接运行监控脚本并导入')
     parser.add_argument('--monitor-script', default=os.path.expanduser('~/.hermes/scripts/paper-monitor/monitor_radiotherapy_ai.py'),
                         help='监控脚本路径')
+    parser.add_argument('--skip-rss', action='store_true', help='只导入 Hermes 论文结果，不采集 RSS 源')
+    parser.add_argument('--rss-days', type=int, default=14, help='RSS 采集回看天数')
     args = parser.parse_args()
 
     papers = []
@@ -242,6 +247,24 @@ def main():
     print(f"📥 读取到 {len(papers)} 篇论文", file=sys.stderr)
     stats = import_papers(papers)
     print(f"✅ 导入完成: {stats['new']} 新增, {stats['updated']} 更新, {stats['found']} 总计", file=sys.stderr)
+
+    if not args.skip_rss:
+        try:
+            from collect import collect_rss_sources
+
+            print(f"📡 同步 RSS 源（最近 {args.rss_days} 天）...", file=sys.stderr)
+            stats['rss'] = collect_rss_sources(days_back=args.rss_days)
+            print(
+                f"✅ RSS 同步完成: {stats['rss']['new']} 新增, "
+                f"{stats['rss']['updated']} 更新, {stats['rss']['found']} 总计",
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            message = f'RSS sync failed from cron import: {exc}'
+            log_sync('rss_feeds', 0, 0, 0, 'error', message)
+            stats['rss'] = {'found': 0, 'new': 0, 'updated': 0, 'failed': 1, 'errors': [message]}
+            print(f"❌ RSS 同步失败: {exc}", file=sys.stderr)
+
     print(json.dumps(stats, ensure_ascii=False))
 
 

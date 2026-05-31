@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 const categories = [
   { key: "all", label: "全部" },
   { key: "paper", label: "论文" },
+  { key: "research", label: "研究" },
+  { key: "regulatory", label: "监管" },
   { key: "industry_news", label: "行业" },
   { key: "guideline", label: "指南" },
 ];

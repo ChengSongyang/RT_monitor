@@ -1,4 +1,4 @@
-"""RSS/Atom feed parser and collector for paper sources."""
+"""RSS/Atom feed parser and collector for configured RSS sources."""
 from __future__ import annotations
 
 import hashlib
@@ -32,6 +32,12 @@ RADIOTHERAPY_TERMS = (
     'brachytherapy', 'proton therapy', 'treatment planning',
     'auto-contouring', 'autocontouring', 'contouring', 'organ at risk',
     'target volume', 'dose distribution', 'dose prediction',
+)
+
+REGULATORY_TERMS = (
+    'fda', 'medwatch', 'recall', 'safety alert', 'warning letter',
+    'adverse event', 'medical device', '510(k)', 'clearance',
+    'clinical trial', 'device correction', 'device removal',
 )
 
 DOI_RE = re.compile(r'\b(?:doi:\s*|https?://(?:dx\.)?doi\.org/)?(10\.\d{4,9}/[^\s<>"]+)', re.IGNORECASE)
@@ -188,6 +194,39 @@ def _source_name(source: Dict[str, object]) -> str:
     return str(source.get('short_name') or source.get('name') or _source_id(source))
 
 
+def _content_source(source: Dict[str, object]) -> str:
+    return str(source.get('source') or _source_name(source))
+
+
+def _source_type(source: Dict[str, object]) -> str:
+    return str(source.get('source_type') or 'news')
+
+
+def _source_category(source: Dict[str, object]) -> str:
+    configured = str(source.get('category') or '')
+    if configured:
+        return configured
+    return 'paper' if _source_type(source) == 'paper' else 'industry_news'
+
+
+def _source_limit(source: Dict[str, object]) -> int:
+    try:
+        return max(0, int(source.get('max_items_per_run') or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _verified_reason(source: Dict[str, object]) -> str:
+    configured = str(source.get('verified_reason') or '')
+    if configured:
+        return configured
+    if _source_type(source) == 'paper':
+        return 'RSS 论文信源'
+    if _source_category(source) == 'regulatory':
+        return 'RSS 监管/安全信源'
+    return 'RSS 新闻信源'
+
+
 def _is_arxiv_source(source: Dict[str, object]) -> bool:
     source_id = _source_id(source).lower()
     name = _source_name(source).lower()
@@ -211,6 +250,8 @@ def score_entry(source: Dict[str, object], entry: Dict[str, str]) -> int:
         score += 8
     if any(term in text for term in AI_TERMS):
         score += 8
+    if any(term in text for term in REGULATORY_TERMS):
+        score += 6
     if entry.get('doi'):
         score += 3
     if entry.get('arxiv_id'):
@@ -225,8 +266,12 @@ def _score_reason(source: Dict[str, object], entry: Dict[str, str], score: int) 
     reasons = []
     if _is_arxiv_source(source):
         reasons.append('arXiv 放疗 AI 相关预印本')
-    else:
+    elif _source_category(source) == 'regulatory':
+        reasons.append(f"{_source_name(source)} 监管/安全警报")
+    elif _source_type(source) == 'paper':
         reasons.append(f"{_source_name(source)} 最新论文条目")
+    else:
+        reasons.append(f"{_source_name(source)} 最新新闻/研究动态")
     if entry.get('doi'):
         reasons.append('含 DOI')
     if entry.get('arxiv_id'):
@@ -258,7 +303,10 @@ def _content_item(source: Dict[str, object], entry: Dict[str, str]) -> Dict[str,
     timestamp = published_dt.timestamp() if published_dt else datetime.now(timezone.utc).timestamp()
     score = score_entry(source, entry)
     source_name = _source_name(source)
-    journal = str(source.get('name') or source_name)
+    display_source = _content_source(source)
+    source_type = _source_type(source)
+    category = _source_category(source)
+    journal = str(source.get('name') or display_source) if source_type == 'paper' else ''
     summary = entry.get('summary') or entry.get('content') or ''
     content = entry.get('content') or summary
     arxiv_id = entry.get('arxiv_id', '')
@@ -267,11 +315,19 @@ def _content_item(source: Dict[str, object], entry: Dict[str, str]) -> Dict[str,
     if _is_arxiv_source(source) and arxiv_id:
         link = f'https://arxiv.org/abs/{arxiv_id}'
 
-    tags = ['论文', 'RSS', source_name]
+    base_tag = '论文' if source_type == 'paper' else '新闻'
+    tags = [base_tag, 'RSS', source_name, category]
+    configured_tags = source.get('tags') or []
+    if isinstance(configured_tags, list):
+        tags.extend(str(tag) for tag in configured_tags if tag)
     if _is_arxiv_source(source):
         tags.append('arXiv')
     if doi:
         tags.append('DOI')
+    deduped_tags = []
+    for tag in tags:
+        if tag and tag not in deduped_tags:
+            deduped_tags.append(tag)
 
     pdf_url = ''
     html_url = ''
@@ -287,15 +343,15 @@ def _content_item(source: Dict[str, object], entry: Dict[str, str]) -> Dict[str,
         'summary': summary[:240] + ('...' if len(summary) > 240 else ''),
         'content': content,
         'url': link or html_url,
-        'source': source_name,
-        'source_type': 'paper',
+        'source': display_source,
+        'source_type': source_type,
         'source_user': entry.get('authors', ''),
         'source_verified': True,
-        'source_verified_reason': 'RSS 论文信源',
+        'source_verified_reason': _verified_reason(source),
         'date': date,
         'timestamp': timestamp,
-        'category': 'paper',
-        'tags': tags[:12],
+        'category': category,
+        'tags': deduped_tags[:12],
         'images': [],
         'meta': {
             'authors': entry.get('authors', ''),
@@ -306,7 +362,9 @@ def _content_item(source: Dict[str, object], entry: Dict[str, str]) -> Dict[str,
             'arxiv_id': arxiv_id,
             'source_id': _source_id(source),
             'source_kind': source.get('kind', 'journal'),
+            'source_kind_label': source.get('kind_label', ''),
             'feed_url': source.get('feed_url') or source.get('url') or '',
+            'rss_feed_url': source.get('feed_url') or source.get('url') or '',
         },
         'ai': {
             'score': score,
@@ -329,6 +387,7 @@ def collect_source(source: Dict[str, object], days_back: int = 14) -> List[Dict[
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
     items: List[Dict[str, object]] = []
+    max_items = _source_limit(source)
     for entry in parse_feed(data):
         published_dt = _parse_date(entry.get('published', ''))
         if published_dt and published_dt < cutoff:
@@ -336,6 +395,8 @@ def collect_source(source: Dict[str, object], days_back: int = 14) -> List[Dict[
         if _is_arxiv_source(source) and not _is_relevant_arxiv(entry):
             continue
         items.append(_content_item(source, entry))
+        if max_items and len(items) >= max_items:
+            break
     return deduplicate(items)
 
 
