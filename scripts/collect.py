@@ -21,7 +21,7 @@ SOURCES = [
 
 
 def collect_rss_sources(days_back: int = 14):
-    total_stats = {'found': 0, 'new': 0, 'updated': 0}
+    total_stats = {'found': 0, 'new': 0, 'updated': 0, 'failed': 0, 'errors': []}
 
     for result in rss_feeds.collect_by_source(days_back=days_back):
         source = result.get('source') or {}
@@ -29,11 +29,13 @@ def collect_rss_sources(days_back: int = 14):
         error = result.get('error') or ''
 
         if error:
+            total_stats['failed'] += 1
+            total_stats['errors'].append(f'{source_id}: {error}')
             log_sync(source_id, 0, 0, 0, 'error', str(error))
             print(f"  ❌ {source_id} failed: {error}", file=sys.stderr)
             continue
 
-        items = result.get('items') or []
+        items = enrich_items(result.get('items') or [], source_name=source_id)
         stats = upsert_content(items)
         log_sync(source_id, stats['found'], stats['new'], stats['updated'])
         total_stats['found'] += stats['found']
@@ -53,11 +55,16 @@ def collect_all(days_back: int = 14):
         try:
             if name == 'rss_feeds':
                 stats = collect_rss_sources(days_back=days_back)
-                log_sync(name, stats['found'], stats['new'], stats['updated'])
+                aggregate_status = 'error' if stats.get('failed') else 'success'
+                aggregate_error = '; '.join(stats.get('errors', []))
+                log_sync(name, stats['found'], stats['new'], stats['updated'], aggregate_status, aggregate_error)
                 total_stats['found'] += stats['found']
                 total_stats['new'] += stats['new']
                 total_stats['updated'] += stats['updated']
-                print(f"  ✅ {name}: {stats['new']} new, {stats['updated']} updated", file=sys.stderr)
+                if stats.get('failed'):
+                    print(f"  ⚠️ {name}: {stats['failed']} failed, {stats['new']} new, {stats['updated']} updated", file=sys.stderr)
+                else:
+                    print(f"  ✅ {name}: {stats['new']} new, {stats['updated']} updated", file=sys.stderr)
                 continue
 
             items = source.collect(days_back=days_back)
