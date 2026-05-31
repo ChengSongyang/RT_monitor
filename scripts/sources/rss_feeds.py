@@ -11,7 +11,11 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from . import deduplicate, fetch_url, make_content_id
-from rss_source_catalog import enabled_rss_sources
+
+try:
+    from ..rss_source_catalog import enabled_rss_sources
+except ImportError:
+    from rss_source_catalog import enabled_rss_sources
 
 
 AI_TERMS = (
