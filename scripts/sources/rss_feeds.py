@@ -140,7 +140,8 @@ def parse_feed(data: bytes) -> List[Dict[str, str]]:
         entry_id = _child_text(raw, ['id', 'guid']) or link
         published = _entry_date(raw)
         authors = _authors(raw)
-        combined = ' '.join([entry_id, title, link, summary, content])
+        doi_text = _child_text(raw, ['doi'])
+        combined = ' '.join([doi_text, entry_id, title, link, summary, content])
         entries.append({
             'id': entry_id,
             'title': title,
